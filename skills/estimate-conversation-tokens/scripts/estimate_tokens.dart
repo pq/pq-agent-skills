@@ -6,16 +6,16 @@ import 'dart:io';
 import 'dart:convert';
 
 void main(List<String> arguments) async {
-  final conversationId = _parseConversationId(arguments);
+  var conversationId = _parseConversationId(arguments);
   if (conversationId == null) {
     print('Error: Conversation ID not provided. Either set ANTIGRAVITY_CONVERSATION_ID environment variable or pass it as an argument.');
     exit(1);
   }
 
-  final home = Platform.environment['HOME'] ?? '';
-  final transcriptPath = '$home/.gemini/jetski/brain/$conversationId/.system_generated/logs/transcript_full.jsonl';
+  var home = Platform.environment['HOME'] ?? '';
+  var transcriptPath = '$home/.gemini/jetski/brain/$conversationId/.system_generated/logs/transcript_full.jsonl';
   
-  final lines = await _readTranscriptLines(transcriptPath);
+  var lines = await _readTranscriptLines(transcriptPath);
   if (lines == null) {
     exit(1);
   }
@@ -32,7 +32,7 @@ String? _parseConversationId(List<String> arguments) {
 }
 
 Future<List<String>?> _readTranscriptLines(String path) async {
-  final file = File(path);
+  var file = File(path);
   try {
     if (!await file.exists()) {
       print('Error: Transcript not found at $path');
@@ -50,26 +50,26 @@ void _printStepBreakdown(List<String> lines) {
   print('| Step | Source | Type | Content Size (Chars) | Role | Est. Tokens (4 chars/token) |');
   print('|---|---|---|---|---|---|');
 
-  for (final line in lines) {
+  for (var line in lines) {
     if (line.trim().isEmpty) continue;
     
-    final decoded = _tryDecodeLine(line);
+    var decoded = _tryDecodeLine(line);
     if (decoded == null) continue;
     
-    final stepIndex = decoded['step_index'] as int? ?? 0;
-    final source = decoded['source'] as String? ?? '';
-    final stepType = decoded['type'] as String? ?? '';
+    var stepIndex = decoded['step_index'] as int? ?? 0;
+    var source = decoded['source'] as String? ?? '';
+    var stepType = decoded['type'] as String? ?? '';
     
-    final content = decoded['content'] as String? ?? '';
-    final thinking = decoded['thinking'] as String? ?? '';
-    final toolCalls = decoded['tool_calls'] != null ? json.encode(decoded['tool_calls']) : '';
+    var content = decoded['content'] as String? ?? '';
+    var thinking = decoded['thinking'] as String? ?? '';
+    var toolCalls = decoded['tool_calls'] != null ? json.encode(decoded['tool_calls']) : '';
     
-    final chars = content.length + thinking.length + toolCalls.length;
-    final role = source == 'MODEL' ? 'Output (from Agent)' : 'Input (to Agent)';
+    var chars = content.length + thinking.length + toolCalls.length;
+    var role = source == 'MODEL' ? 'Output (from Agent)' : 'Input (to Agent)';
 
-    final estTokens = (chars / 4).round();
-    final formattedChars = formatNumber(chars);
-    final formattedTokens = formatNumber(estTokens);
+    var estTokens = (chars / 4).round();
+    var formattedChars = formatNumber(chars);
+    var formattedTokens = formatNumber(estTokens);
     print('| $stepIndex | $source | $stepType | $formattedChars | $role | $formattedTokens |');
   }
 }
@@ -83,32 +83,32 @@ void _printCumulativeCalculations(List<String> lines) {
   int totalProcessedInputTokens = 0;
   int totalOutputTokens = 0;
 
-  for (final line in lines) {
+  for (var line in lines) {
     if (line.trim().isEmpty) continue;
     
-    final decoded = _tryDecodeLine(line);
+    var decoded = _tryDecodeLine(line);
     if (decoded == null) continue;
 
-    final source = decoded['source'] as String? ?? '';
-    final content = decoded['content'] as String? ?? '';
-    final thinking = decoded['thinking'] as String? ?? '';
-    final toolCalls = decoded['tool_calls'] != null ? json.encode(decoded['tool_calls']) : '';
+    var source = decoded['source'] as String? ?? '';
+    var content = decoded['content'] as String? ?? '';
+    var thinking = decoded['thinking'] as String? ?? '';
+    var toolCalls = decoded['tool_calls'] != null ? json.encode(decoded['tool_calls']) : '';
 
     if (source != 'MODEL') {
       cumulativeInputChars += content.length;
     } else {
       modelCalls += 1;
-      final estInTokens = (cumulativeInputChars / 4).round();
-      final estOutTokens = ((thinking.length + toolCalls.length) / 4).round();
+      var estInTokens = (cumulativeInputChars / 4).round();
+      var estOutTokens = ((thinking.length + toolCalls.length) / 4).round();
       totalProcessedInputTokens += estInTokens;
       totalOutputTokens += estOutTokens;
       cumulativeInputChars += thinking.length + toolCalls.length;
     }
   }
 
-  final baseSystemPromptTokens = 10000;
-  final totalSystemOverhead = baseSystemPromptTokens * modelCalls;
-  final grandTotalTokens = totalProcessedInputTokens + totalOutputTokens + totalSystemOverhead;
+  var baseSystemPromptTokens = 10000;
+  var totalSystemOverhead = baseSystemPromptTokens * modelCalls;
+  var grandTotalTokens = totalProcessedInputTokens + totalOutputTokens + totalSystemOverhead;
 
   print('\n* **Number of Model Invocations (Turns):** $modelCalls');
   print('* **Estimated Cumulative Input Tokens (Transcript):** ${formatNumber(totalProcessedInputTokens)}');
@@ -120,7 +120,7 @@ void _printCumulativeCalculations(List<String> lines) {
 
 Map<String, dynamic>? _tryDecodeLine(String line) {
   try {
-    final decoded = json.decode(line);
+    var decoded = json.decode(line);
     if (decoded is Map<String, dynamic>) {
       return decoded;
     }
@@ -131,8 +131,8 @@ Map<String, dynamic>? _tryDecodeLine(String line) {
 }
 
 String formatNumber(num number) {
-  final str = number.toString();
-  final buffer = StringBuffer();
+  var str = number.toString();
+  var buffer = StringBuffer();
   int count = 0;
   for (int i = str.length - 1; i >= 0; i--) {
     if (count > 0 && count % 3 == 0 && str[i] != '-') {
