@@ -1,6 +1,8 @@
-# Agent Skills by PQ (`pq-agent-skills`)
+# 🚧 Agent Skills (WIP)
 
-A collection of custom skills for agentic workflows in the Gemini / Antigravity editor space.
+A collection of custom skills for agentic workflows.
+
+(Limited to Gemini / Antigravity for now.) 
 
 ## Skills Included
 
@@ -13,7 +15,6 @@ Analyzes the full conversation transcript logs (`transcript_full.jsonl`) to esti
 
 When the skill is executed, it outputs a detailed step-by-step breakdown followed by cumulative calculations:
 
-```markdown
 ### Turn-by-Turn Content Breakdown
 
 | Step | Source | Type | Content Size (Chars) | Role | Est. Tokens (4 chars/token) |
@@ -42,7 +43,7 @@ Because the agent runs in a loop, each time the agent invokes the model (PLANNER
 * **Estimated System & Tool Definition Overhead (10,000/turn):** 490,000
 * **Grand Total Estimated Tokens (without Caching):** **909,320**
 * **Grand Total Estimated Tokens (with Context Caching active):** **~227,330**
-```
+
 
 ---
 
@@ -51,7 +52,7 @@ Because the agent runs in a loop, each time the agent invokes the model (PLANNER
 ### Option 1: Global Setup (Available everywhere)
 Clone the repository and symlink the skill to your global config directory:
 ```bash
-git clone https://github.com/pquitslund/pq-agent-skills.git ~/src/pq-agent-skills
+git clone https://github.com/pq/pq-agent-skills.git ~/src/pq-agent-skills
 mkdir -p ~/.gemini/config/skills
 ln -s ~/src/pq-agent-skills/skills/estimate-conversation-tokens ~/.gemini/config/skills/estimate-conversation-tokens
 ```
@@ -61,8 +62,8 @@ Add this repository to your project's `.agents/skills.json` under your `entries`
 ```json
 {
   "entries": [
-    { "path": "/Users/pquitslund/src/repos/pq-agent-skills/skills" }
+    { "path": "<path-to-checkout/pq-agent-skills/skills" }
   ]
 }
 ```
-*Note: Make sure to replace the path with your absolute local path.*
+*Note: Make sure to replace "path-to-checkout" with the absolute local path to your checkout.*
