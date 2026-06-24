@@ -1,0 +1,10 @@
+name: pq_agent_skills
+description: A collection of custom skills for agentic workflows in the Gemini / Antigravity editor space.
+version: 1.0.0
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dev_dependencies:
+  lints: ^3.0.0

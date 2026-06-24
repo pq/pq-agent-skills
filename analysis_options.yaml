@@ -1,0 +1,9 @@
+# This file configures the static analysis as well as the linter rules for the project.
+# Recommended lints are provided by package:lints/recommended.yaml.
+include: package:lints/recommended.yaml
+
+analyzer:
+  exclude:
+    - .dart_tool/**
+    - .gemini/**
+

@@ -1,0 +1,13 @@
+# Dart tools and dependencies
+.dart_tool/
+.packages
+build/
+pubspec.lock
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+
+# OS files
+.DS_Store
