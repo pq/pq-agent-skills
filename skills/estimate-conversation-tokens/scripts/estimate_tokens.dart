@@ -9,12 +9,33 @@ class TurnBlock {
   final int queryNumber;
   final String userRequestSummary;
   int modelInvocations = 0;
-  int newCharsIn = 0;
-  int newCharsOut = 0;
+  
+  // Category breakdown (new chars in this turn)
+  int fileReadsChars = 0;
+  int commandChars = 0;
+  int searchChars = 0;
+  int webChars = 0;
+  int reasoningChars = 0;
+  int knowledgeChars = 0;
+  int otherChars = 0;
+
   int cumulativeTokensAtEnd = 0;
   int cumulativeCachedTokensAtEnd = 0;
 
   TurnBlock(this.queryNumber, this.userRequestSummary);
+  
+  int get newCharsIn =>
+      fileReadsChars + commandChars + searchChars + webChars + knowledgeChars + otherChars;
+
+  int get newCharsOut => reasoningChars;
+
+  int get totalNewChars => newCharsIn + newCharsOut;
+}
+
+class _Category {
+  final String name;
+  final int chars;
+  _Category(this.name, this.chars);
 }
 
 void main(List<String> arguments) async {
@@ -64,6 +85,15 @@ void _printGranularBreakdown(List<String> lines) {
   int totalProcessedInputTokens = 0;
   int totalOutputTokens = 0;
 
+  // Session aggregate counts
+  int totalFileReadChars = 0;
+  int totalCommandChars = 0;
+  int totalSearchChars = 0;
+  int totalWebChars = 0;
+  int totalReasoningChars = 0;
+  int totalKnowledgeChars = 0;
+  int totalOtherChars = 0;
+
   for (var line in lines) {
     if (line.trim().isEmpty) continue;
     
@@ -97,12 +127,34 @@ void _printGranularBreakdown(List<String> lines) {
 
     var activeBlock = blocks.last;
 
+    // Distribute to categories
+    if (stepType == 'VIEW_FILE' || stepType == 'NOTEBOOK_EDIT') {
+      activeBlock.fileReadsChars += chars;
+      totalFileReadChars += chars;
+    } else if (stepType == 'RUN_COMMAND') {
+      activeBlock.commandChars += chars;
+      totalCommandChars += chars;
+    } else if (stepType == 'GREP_SEARCH' || stepType == 'LIST_DIRECTORY') {
+      activeBlock.searchChars += chars;
+      totalSearchChars += chars;
+    } else if (stepType == 'SEARCH_WEB' || stepType == 'READ_URL_CONTENT') {
+      activeBlock.webChars += chars;
+      totalWebChars += chars;
+    } else if (stepType == 'KNOWLEDGE_ARTIFACTS') {
+      activeBlock.knowledgeChars += chars;
+      totalKnowledgeChars += chars;
+    } else if (source == 'MODEL') {
+      activeBlock.reasoningChars += chars;
+      totalReasoningChars += chars;
+    } else {
+      activeBlock.otherChars += chars;
+      totalOtherChars += chars;
+    }
+
     if (source != 'MODEL') {
-      activeBlock.newCharsIn += chars;
       cumulativeInputChars += content.length;
     } else {
       activeBlock.modelInvocations += 1;
-      activeBlock.newCharsOut += chars;
       
       totalModelCalls += 1;
       var estInTokens = (cumulativeInputChars / 4).round();
@@ -132,12 +184,35 @@ void _printGranularBreakdown(List<String> lines) {
     print('| $queryStr | `${block.userRequestSummary}` | ${block.modelInvocations} | $formattedIn | $formattedOut | $formattedCum | $formattedCumCached |');
   }
 
-  print('\n### 📈 Total Aggregated Calculations');
+  print('\n### 📈 Category-wise Breakdown of Total Tokens');
+  
   var baseSystemPromptTokens = 10000;
   var totalSystemOverhead = baseSystemPromptTokens * totalModelCalls;
   var grandTotalTokens = totalProcessedInputTokens + totalOutputTokens + totalSystemOverhead;
 
-  print('\n* **Total Model Invocations (Turns):** $totalModelCalls');
+  var categories = [
+    _Category('📄 File I/O (Reads/Edits)', totalFileReadChars),
+    _Category('🖥️ Command Execution', totalCommandChars),
+    _Category('🔍 Search & Directory Listing', totalSearchChars),
+    _Category('🌐 Web Search & Reads', totalWebChars),
+    _Category('📚 Knowledge Base Overhead', totalKnowledgeChars),
+    _Category('🧠 Agent Reasoning & Output', totalReasoningChars),
+    _Category('💬 User Input & Other Metadata', totalOtherChars),
+    _Category('⚙️ System & History Overhead', totalSystemOverhead * 4), // Approx equivalent chars
+  ];
+
+  var totalCharsAll = categories.fold<int>(0, (sum, cat) => sum + cat.chars);
+
+  print('\n| Category | Estimated Chars | Estimated Tokens | % of Total |');
+  print('|---|---|---|---|');
+  for (var cat in categories) {
+    var estTokens = (cat.chars / 4).round();
+    var percent = totalCharsAll > 0 ? (cat.chars / totalCharsAll * 100).toStringAsFixed(1) : '0.0';
+    print('| ${cat.name} | ${formatNumber(cat.chars)} | ${formatNumber(estTokens)} | $percent% |');
+  }
+
+  print('\n### 📈 Total Aggregated Calculations');
+  print('* **Total Model Invocations (Turns):** $totalModelCalls');
   print('* **Total Estimated Input Tokens:** ${formatNumber(totalProcessedInputTokens)}');
   print('* **Total Estimated Output Tokens:** ${formatNumber(totalOutputTokens)}');
   print('* **Total System & Tool Definition Overhead:** ${formatNumber(totalSystemOverhead)}');
