@@ -15,7 +15,6 @@ Analyzes the full conversation transcript logs (`transcript_full.jsonl`) for the
 
 When the skill is executed, it outputs a detailed breakdown grouped by user request (Turn) and a category-wise breakdown of total tokens:
 
-```markdown
 ### 📊 Turn-by-Turn Granular Cost Breakdown
 
 | Turn | User Request / Task | Model Calls | Est. New Input Chars | Est. New Output Chars | Cumulative Tokens (No Cache) | Cumulative (With Cache) |
@@ -46,7 +45,7 @@ When the skill is executed, it outputs a detailed breakdown grouped by user requ
 * **Total System & Tool Definition Overhead:** 2,500,000
 * **Grand Total (Without Caching):** **12,725,460**
 * **Grand Total (With Context Caching active):** **~3,181,365**
-```
+
 
 ---
 
