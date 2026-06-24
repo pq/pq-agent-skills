@@ -13,26 +13,40 @@ Analyzes the full conversation transcript logs (`transcript_full.jsonl`) for the
 
 ## 📊 Example Run Output
 
-When the skill is executed, it outputs a detailed step-by-step breakdown grouped by each user request, followed by cumulative calculations:
+When the skill is executed, it outputs a detailed breakdown grouped by user request (Turn) and a category-wise breakdown of total tokens:
 
-### Turn-by-Turn Granular Cost Breakdown
+```markdown
+### 📊 Turn-by-Turn Granular Cost Breakdown
 
 | Turn | User Request / Task | Model Calls | Est. New Input Chars | Est. New Output Chars | Cumulative Tokens (No Cache) | Cumulative (With Cache) |
 |---|---|---|---|---|---|---|
-| #1 | `I'd like to understand token use when I'm using...` | 9 | 4,756 | 19,265 | 109,545 | 27,386 |
-| #2 | `I'd like visual feedback. So for example, for m...` | 19 | 1,048 | 100,256 | 404,338 | 101,085 |
-| #3 | `Could you rewrite the estimate_tokens script in...` | 8 | 1,209 | 21,922 | 574,324 | 143,581 |
+| #1 | `I'd like to understand token use when I'm using...` | 9 | 5,439 | 18,582 | 109,545 | 27,386 |
+| #2 | `I'd like visual feedback. So for example, for m...` | 19 | 82,083 | 19,221 | 404,338 | 101,085 |
+| #3 | `Could you rewrite the estimate_tokens script in...` | 8 | 3,441 | 19,690 | 574,324 | 143,581 |
 | ... | *[Truncated for readability]* | ... | ... | ... | ... | ... |
-| #21 | `This is great for tracking the accumulating cos...` | 2 | 1,128 | 11,064 | 5,734,221 | 1,433,555 |
+| #29 | `I like option A The current local time is: 2026...` | 6 | 2,000 | 23,680 | 12,725,460 | 3,181,365 |
+
+### 📈 Category-wise Breakdown of Total Tokens
+
+| Category | Estimated Chars | Estimated Tokens | % of Total |
+|---|---|---|---|
+| 📄 File I/O (Reads/Edits) | 98,340 | 24,585 | 0.8% |
+| 🖥️ Command Execution | 92,937 | 23,234 | 0.7% |
+| 🔍 Search & Directory Listing | 3,193 | 798 | 0.0% |
+| 🌐 Web Search & Reads | 898 | 225 | 0.0% |
+| 📚 Knowledge Base Overhead | 6,844 | 1,711 | 0.1% |
+| 🧠 Agent Reasoning & Output | 332,349 | 83,087 | 2.6% |
+| 💬 User Input & Other Metadata | 95,844 | 23,961 | 0.8% |
+| ⚙️ System & History Overhead | 10,000,000 | 2,500,000 | 95.0% |
 
 ### 📈 Total Aggregated Calculations
-
-* **Total Model Invocations (Turns):** 159
-* **Total Estimated Input Tokens:** 4,101,564
-* **Total Estimated Output Tokens:** 42,657
-* **Total System & Tool Definition Overhead:** 1,590,000
-* **Grand Total (Without Caching):** **5,734,221**
-* **Grand Total (With Context Caching active):** **~1,433,555**
+* **Total Model Invocations (Turns):** 250
+* **Total Estimated Input Tokens:** 10,157,292
+* **Total Estimated Output Tokens:** 68,168
+* **Total System & Tool Definition Overhead:** 2,500,000
+* **Grand Total (Without Caching):** **12,725,460**
+* **Grand Total (With Context Caching active):** **~3,181,365**
+```
 
 ---
 
