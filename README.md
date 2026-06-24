@@ -7,7 +7,7 @@ A collection of custom skills for agentic workflows.
 ## Skills Included
 
 ### 📊 Estimate Conversation Tokens
-Analyzes the full conversation transcript logs (`transcript_full.jsonl`) to estimate character lengths, model invocations (turns), cumulative input/output tokens, and context caching savings.
+Analyzes the full conversation transcript logs (`transcript_full.jsonl`) for the **current active conversation** (automatically resolved via environment variables) to estimate character lengths, model invocations (turns), cumulative input/output tokens, and context caching savings.
 
 ---
 
@@ -62,8 +62,24 @@ Add this repository to your project's `.agents/skills.json` under your `entries`
 ```json
 {
   "entries": [
-    { "path": "<path-to-checkout/pq-agent-skills/skills" }
+    { "path": "<path-to-checkout>/pq-agent-skills/skills" }
   ]
 }
 ```
-*Note: Make sure to replace "path-to-checkout" with the absolute local path to your checkout.*
+*Note: Make sure to replace `<path-to-checkout>` with the absolute local path to your checkout.*
+
+---
+
+## 🛠️ Usage / Invocation
+
+Once the skill is installed, you can invoke it in your agent chat interface in two ways:
+
+1. **Via Slash Command:**
+   Type the slash command directly in the chat:
+   ```text
+   /estimate-conversation-tokens
+   ```
+
+2. **Via Natural Language:**
+   Ask the agent directly:
+   > *"Estimate token usage for this conversation."*
