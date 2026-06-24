@@ -7,3 +7,6 @@ analyzer:
     - .dart_tool/**
     - .gemini/**
 
+linter:
+  rules:
+    - unnecessary_final

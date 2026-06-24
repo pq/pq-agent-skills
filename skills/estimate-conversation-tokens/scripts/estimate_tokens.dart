@@ -18,16 +18,16 @@ class TurnBlock {
 }
 
 void main(List<String> arguments) async {
-  final conversationId = _parseConversationId(arguments);
+  var conversationId = _parseConversationId(arguments);
   if (conversationId == null) {
     print('Error: Conversation ID not provided. Either set ANTIGRAVITY_CONVERSATION_ID environment variable or pass it as an argument.');
     exit(1);
   }
 
-  final home = Platform.environment['HOME'] ?? '';
-  final transcriptPath = '$home/.gemini/jetski/brain/$conversationId/.system_generated/logs/transcript_full.jsonl';
+  var home = Platform.environment['HOME'] ?? '';
+  var transcriptPath = '$home/.gemini/jetski/brain/$conversationId/.system_generated/logs/transcript_full.jsonl';
   
-  final lines = await _readTranscriptLines(transcriptPath);
+  var lines = await _readTranscriptLines(transcriptPath);
   if (lines == null) {
     exit(1);
   }
@@ -36,8 +36,8 @@ void main(List<String> arguments) async {
 }
 
 String formatNumber(num number) {
-  final str = number.toString();
-  final buffer = StringBuffer();
+  var str = number.toString();
+  var buffer = StringBuffer();
   int count = 0;
   for (int i = str.length - 1; i >= 0; i--) {
     if (count > 0 && count % 3 == 0 && str[i] != '-') {
@@ -57,25 +57,25 @@ String? _parseConversationId(List<String> arguments) {
 }
 
 void _printGranularBreakdown(List<String> lines) {
-  final blocks = <TurnBlock>[];
+  var blocks = <TurnBlock>[];
   
   int cumulativeInputChars = 0;
   int totalModelCalls = 0;
   int totalProcessedInputTokens = 0;
   int totalOutputTokens = 0;
 
-  for (final line in lines) {
+  for (var line in lines) {
     if (line.trim().isEmpty) continue;
     
-    final step = _tryDecodeLine(line);
+    var step = _tryDecodeLine(line);
     if (step == null) continue;
 
-    final stepType = step['type'] as String? ?? '';
-    final source = step['source'] as String? ?? '';
-    final content = step['content'] as String? ?? '';
-    final thinking = step['thinking'] as String? ?? '';
-    final toolCalls = step['tool_calls'] != null ? json.encode(step['tool_calls']) : '';
-    final chars = content.length + thinking.length + toolCalls.length;
+    var stepType = step['type'] as String? ?? '';
+    var source = step['source'] as String? ?? '';
+    var content = step['content'] as String? ?? '';
+    var thinking = step['thinking'] as String? ?? '';
+    var toolCalls = step['tool_calls'] != null ? json.encode(step['tool_calls']) : '';
+    var chars = content.length + thinking.length + toolCalls.length;
 
     if (stepType == 'USER_INPUT') {
       var summary = content
@@ -95,7 +95,7 @@ void _printGranularBreakdown(List<String> lines) {
       blocks.add(TurnBlock(0, 'System Initialization'));
     }
 
-    final activeBlock = blocks.last;
+    var activeBlock = blocks.last;
 
     if (source != 'MODEL') {
       activeBlock.newCharsIn += chars;
@@ -105,15 +105,15 @@ void _printGranularBreakdown(List<String> lines) {
       activeBlock.newCharsOut += chars;
       
       totalModelCalls += 1;
-      final estInTokens = (cumulativeInputChars / 4).round();
-      final estOutTokens = ((thinking.length + toolCalls.length) / 4).round();
+      var estInTokens = (cumulativeInputChars / 4).round();
+      var estOutTokens = ((thinking.length + toolCalls.length) / 4).round();
       totalProcessedInputTokens += estInTokens;
       totalOutputTokens += estOutTokens;
 
       cumulativeInputChars += thinking.length + toolCalls.length;
       
-      final systemOverhead = totalModelCalls * 10000;
-      final runningTotal = totalProcessedInputTokens + totalOutputTokens + systemOverhead;
+      var systemOverhead = totalModelCalls * 10000;
+      var runningTotal = totalProcessedInputTokens + totalOutputTokens + systemOverhead;
       activeBlock.cumulativeTokensAtEnd = runningTotal;
       activeBlock.cumulativeCachedTokensAtEnd = (runningTotal * 0.25).round();
     }
@@ -123,19 +123,19 @@ void _printGranularBreakdown(List<String> lines) {
   print('| Turn | User Request / Task | Model Calls | Est. New Input Chars | Est. New Output Chars | Cumulative Tokens (No Cache) | Cumulative (With Cache) |');
   print('|---|---|---|---|---|---|---|');
 
-  for (final block in blocks) {
-    final queryStr = block.queryNumber == 0 ? 'Init' : '#${block.queryNumber}';
-    final formattedIn = formatNumber(block.newCharsIn);
-    final formattedOut = formatNumber(block.newCharsOut);
-    final formattedCum = formatNumber(block.cumulativeTokensAtEnd);
-    final formattedCumCached = formatNumber(block.cumulativeCachedTokensAtEnd);
+  for (var block in blocks) {
+    var queryStr = block.queryNumber == 0 ? 'Init' : '#${block.queryNumber}';
+    var formattedIn = formatNumber(block.newCharsIn);
+    var formattedOut = formatNumber(block.newCharsOut);
+    var formattedCum = formatNumber(block.cumulativeTokensAtEnd);
+    var formattedCumCached = formatNumber(block.cumulativeCachedTokensAtEnd);
     print('| $queryStr | `${block.userRequestSummary}` | ${block.modelInvocations} | $formattedIn | $formattedOut | $formattedCum | $formattedCumCached |');
   }
 
   print('\n### 📈 Total Aggregated Calculations');
-  final baseSystemPromptTokens = 10000;
-  final totalSystemOverhead = baseSystemPromptTokens * totalModelCalls;
-  final grandTotalTokens = totalProcessedInputTokens + totalOutputTokens + totalSystemOverhead;
+  var baseSystemPromptTokens = 10000;
+  var totalSystemOverhead = baseSystemPromptTokens * totalModelCalls;
+  var grandTotalTokens = totalProcessedInputTokens + totalOutputTokens + totalSystemOverhead;
 
   print('\n* **Total Model Invocations (Turns):** $totalModelCalls');
   print('* **Total Estimated Input Tokens:** ${formatNumber(totalProcessedInputTokens)}');
@@ -146,7 +146,7 @@ void _printGranularBreakdown(List<String> lines) {
 }
 
 Future<List<String>?> _readTranscriptLines(String path) async {
-  final file = File(path);
+  var file = File(path);
   try {
     if (!await file.exists()) {
       print('Error: Transcript not found at $path');
@@ -161,7 +161,7 @@ Future<List<String>?> _readTranscriptLines(String path) async {
 
 Map<String, dynamic>? _tryDecodeLine(String line) {
   try {
-    final decoded = json.decode(line);
+    var decoded = json.decode(line);
     if (decoded is Map<String, dynamic>) {
       return decoded;
     }
