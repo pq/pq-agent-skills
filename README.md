@@ -13,37 +13,26 @@ Analyzes the full conversation transcript logs (`transcript_full.jsonl`) for the
 
 ## 📊 Example Run Output
 
-When the skill is executed, it outputs a detailed step-by-step breakdown followed by cumulative calculations:
+When the skill is executed, it outputs a detailed step-by-step breakdown grouped by each user request, followed by cumulative calculations:
 
-### Turn-by-Turn Content Breakdown
+### Turn-by-Turn Granular Cost Breakdown
 
-| Step | Source | Type | Content Size (Chars) | Role | Est. Tokens (4 chars/token) |
-|---|---|---|---|---|---|
-| 0 | USER_EXPLICIT | USER_INPUT | 1,334 | Input (to Agent) | 334 |
-| 1 | SYSTEM | CONVERSATION_HISTORY | 0 | Input (to Agent) | 0 |
-| 2 | SYSTEM | KNOWLEDGE_ARTIFACTS | 3,422 | Input (to Agent) | 856 |
-| 4 | MODEL | PLANNER_RESPONSE | 2,587 | Output (from Agent) | 647 |
-| 5 | MODEL | LIST_DIRECTORY | 222 | Output (from Agent) | 56 |
-| 7 | SYSTEM | EPHEMERAL_MESSAGE | 0 | Input (to Agent) | 0 |
-| 8 | MODEL | PLANNER_RESPONSE | 486 | Output (from Agent) | 122 |
-| 9 | MODEL | GENERIC | 7,025 | Output (from Agent) | 1,756 |
-| 11 | MODEL | PLANNER_RESPONSE | 611 | Output (from Agent) | 153 |
-| 12 | MODEL | SEARCH_WEB | 223 | Output (from Agent) | 56 |
-| 14 | MODEL | PLANNER_RESPONSE | 464 | Output (from Agent) | 116 |
-| 15 | MODEL | SEARCH_WEB | 238 | Output (from Agent) | 60 |
-| 17 | MODEL | PLANNER_RESPONSE | 7,409 | Output (from Agent) | 1,852 |
+| Turn | User Request / Task | Model Calls | Est. New Input Chars | Est. New Output Chars | Cumulative Tokens (No Cache) | Cumulative (With Cache) |
+|---|---|---|---|---|---|---|
+| #1 | `I'd like to understand token use when I'm using...` | 9 | 4,756 | 19,265 | 109,545 | 27,386 |
+| #2 | `I'd like visual feedback. So for example, for m...` | 19 | 1,048 | 100,256 | 404,338 | 101,085 |
+| #3 | `Could you rewrite the estimate_tokens script in...` | 8 | 1,209 | 21,922 | 574,324 | 143,581 |
+| ... | *[Truncated for readability]* | ... | ... | ... | ... | ... |
+| #21 | `This is great for tracking the accumulating cos...` | 2 | 1,128 | 11,064 | 5,734,221 | 1,433,555 |
 
-### Cumulative Token Calculations
+### 📈 Total Aggregated Calculations
 
-Because the agent runs in a loop, each time the agent invokes the model (PLANNER_RESPONSE), it sends the *entire accumulated history* up to that point.
-
-* **Number of Model Invocations (Turns):** 49
-* **Estimated Cumulative Input Tokens (Transcript):** 403,788
-* **Estimated Output Tokens (Reasoning & Tool Calls):** 15,532
-* **Estimated System & Tool Definition Overhead (10,000/turn):** 490,000
-* **Grand Total Estimated Tokens (without Caching):** **909,320**
-* **Grand Total Estimated Tokens (with Context Caching active):** **~227,330**
-
+* **Total Model Invocations (Turns):** 159
+* **Total Estimated Input Tokens:** 4,101,564
+* **Total Estimated Output Tokens:** 42,657
+* **Total System & Tool Definition Overhead:** 1,590,000
+* **Grand Total (Without Caching):** **5,734,221**
+* **Grand Total (With Context Caching active):** **~1,433,555**
 
 ---
 
