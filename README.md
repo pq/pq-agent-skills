@@ -9,6 +9,9 @@ A collection of custom skills for agentic workflows.
 ### 📊 Estimate Conversation Tokens
 Analyzes the full conversation transcript logs (`transcript_full.jsonl`) for the **current active conversation** (automatically resolved via environment variables) to estimate character lengths, model invocations (turns), cumulative input/output tokens, and context caching savings.
 
+### 🕵️ Conversation Auditor
+Audits previous conversation transcripts to help you identify ways to tune your agentic coding experience. It looks for commonly performed actions, repetitive low-level commands, tool sequences that can be aggregated, and places where the context window is being heavily utilized.
+
 ---
 
 ## 📊 Example Run Output
@@ -62,14 +65,42 @@ The script groups the conversation's raw characters and tool interactions into t
 
 ---
 
+## 🕵️ Example Conversation Audit Output
+
+When the auditor skill is executed on a past conversation, it generates a report highlighting tool usage, repeated sequences, and shell commands:
+
+```text
+--- Audit Report for Conversation 9c4ec44a-d76e-43be-843d-9f4853b17bdf ---
+
+1. Tool Usage Frequencies:
+  - run_command: 50
+  - replace_file_content: 14
+  - view_file: 12
+  - multi_replace_file_content: 3
+
+2. Repeated Tool Sequences (Potential for bulk operations or new MCP):
+  - view_file called 3 times in a row (ending around step 14)
+  - run_command called 8 times in a row (ending around step 129)
+
+3. Shell Commands Executed (Potential for scripting):
+  - [2x] python3 -c "import json..."
+  - [1x] ps aux | grep auditor.py
+  - [1x] lsof -p 8589 | grep cwd
+
+4. Largest Context Hogs (Content > 10,000 chars):
+```
+
+---
+
 ## 🚀 Installation
 
 ### Option 1: Global Setup (Available everywhere)
-Clone the repository and symlink the skill to your global config directory:
+Clone the repository and symlink the skills to your global config directory:
 ```bash
 git clone https://github.com/pq/pq-agent-skills.git ~/src/pq-agent-skills
 mkdir -p ~/.gemini/config/skills
 ln -s ~/src/pq-agent-skills/skills/estimate-conversation-tokens ~/.gemini/config/skills/estimate-conversation-tokens
+ln -s ~/src/pq-agent-skills/skills/conversation-auditor ~/.gemini/config/skills/conversation-auditor
 ```
 
 ### Option 2: Workspace Integration (Project-specific)
@@ -87,10 +118,10 @@ Add this repository to your project's `.agents/skills.json` under your `entries`
 
 ## 🛠️ Usage / Invocation
 
-Once the skill is installed, you can invoke it in your agent chat interface in two ways:
+Once the skills are installed, you can invoke them in your agent chat interface in two ways:
 
 1. **Via Slash Command:**
-   Type the slash command directly in the chat:
+   Type the slash command directly in the chat (if applicable):
    ```text
    /estimate-conversation-tokens
    ```
@@ -98,3 +129,4 @@ Once the skill is installed, you can invoke it in your agent chat interface in t
 2. **Via Natural Language:**
    Ask the agent directly:
    > *"Estimate token usage for this conversation."*
+   > *"Audit my last conversation and tell me what new skills I should write."*
