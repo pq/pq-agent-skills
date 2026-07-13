@@ -13,13 +13,20 @@ Trigger this skill when the user asks to "audit my conversation", "suggest new s
 
 ## Workflow
 
-1. **Ask for Target (if not specified):** Ask the user if they want to audit their *most recent* conversation, or a specific conversation ID. (You can check their recent conversation history in your `<conversation_summaries>` block for candidates).
+1. **Determine the Audit Target:** If the user doesn't specify an exact scope (e.g., they just type `/conversation-auditor`), you MUST use the `ask_question` tool to present a multiple-choice question asking them what they want to audit. Provide options like:
+   - "(Recommended) My most recent conversation"
+   - "My last 5 conversations (Aggregated)"
+   - "My last 10 conversations (Aggregated)"
+   - "A specific conversation ID (Write-in)"
 2. **Run the Audit Script:** 
-   Execute the provided Dart script against the target conversation ID:
+   Execute the provided Dart script:
    ```bash
    # Assuming the agent is running in a standard setup, you can locate the script relative to this skill file.
-   # Alternatively, if you know the path to this skill directory:
-   dart run <path_to_this_skill_directory>/scripts/audit_conversation.dart <conversation_id> <path_to_app_data_dir>
+   # For a specific conversation:
+   dart run <path_to_this_skill_directory>/scripts/audit_conversation.dart <path_to_app_data_dir> <conversation_id>
+   
+   # For the last N conversations (aggregated):
+   dart run <path_to_this_skill_directory>/scripts/audit_conversation.dart <path_to_app_data_dir> --last 3
    ```
 3. **Analyze the Output:** 
    Read the output of the script. The script will highlight:
@@ -29,10 +36,10 @@ Trigger this skill when the user asks to "audit my conversation", "suggest new s
    - Largest Context Hogs
 4. **Generate Recommendations:**
    Use your own intelligence (as an LLM) to interpret the script's output and present a structured markdown report to the user in an Artifact (e.g. `audit_report.md`).
-   Your report should include:
-   - **Potential Scripts/Aliases:** Are there bash commands being run over and over that could be a script?
-   - **New Skills:** Are there long sequences of tools (like viewing a file, searching, replacing) that follow a specific pattern? Suggest creating a skill for it.
-   - **MCP Server Opportunities:** Are there low-level tools (like grep, find, API curl requests) being used that could be wrapped in a more structured MCP server for reliability?
-   - **Context Window Analysis:** Identify steps that consumed large amounts of tokens and suggest how the user (or the agent) might avoid this in the future (e.g., using `grep_search` instead of reading an entire file).
+   
+   **Use this analytical framework to categorize your findings:**
+   - **The "Iterative Struggle" (High Frequency, 1 Conversation):** Was a command or tool run many times in just one conversation? The agent likely got stuck brute-forcing a problem or parsing data. *Recommendation:* An MCP server for structured data access or a better error-handling wrapper.
+   - **The "Project Boilerplate" (Consistent Frequency, Multiple Convos, 1 Repo):** Was a command run across several conversations, but always in the same workspace? *Recommendation:* Extract into a **Project-Specific Skill** (`.agents/skills/`) or add a Knowledge Item (KI) so the agent knows the exact build/test commands.
+   - **The "Global Gap" (Consistent Frequency, Multiple Convos, Multiple Repos):** Is the agent relying on raw shell tools (like `ps aux`, `lsof`, `git log`, `find`) across many different workspaces? *Recommendation:* Suggest a **Global Skill** (`~/.gemini/config/skills/`) or a dedicated **MCP Server** (like a Git MCP or System Monitor MCP).
 
-5. **Deliver Findings:** Provide the report to the user, highlighting the highest-value optimization opportunities.
+5. **Deliver Findings:** Provide the report to the user, highlighting the highest-value optimization opportunities based on the framework above.
