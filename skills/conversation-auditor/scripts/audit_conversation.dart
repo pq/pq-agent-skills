@@ -68,6 +68,7 @@ void main(List<String> args) async {
   print('  - Total Steps (JSONL lines) parsed: ${stats['totalSteps']}');
   print('  - Total Tool Calls analyzed: ${stats['totalToolCalls']}');
   print('  - Total User Prompts extracted: ${stats['totalPromptsExtracted']}');
+  print('  - Prompt Extraction Mode: $extractPrompts');
   
   print('\n1. Tool Usage Frequencies:');
   var sortedTools = toolCounts.entries.toList()
