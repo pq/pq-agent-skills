@@ -67,31 +67,83 @@ The script groups the conversation's raw characters and tool interactions into t
 
 ## 🕵️ Example Conversation Audit Output
 
-When the auditor skill is executed on a past conversation, it generates a report highlighting tool usage, repeated sequences, and shell commands:
+When the auditor skill is executed, the agent generates a final report analyzing tool usage, repetitive shell commands, and extracting semantic workflow recommendations from your raw prompts:
 
-```text
---- Audit Report for Conversation 9c4ec44a-d76e-43be-843d-9f4853b17bdf ---
+```markdown
+# Aggregated Conversation Audit Report
 
-1. Tool Usage Frequencies:
-  - run_command: 50
-  - replace_file_content: 14
-  - view_file: 12
-  - multi_replace_file_content: 3
+This report covers the aggregated data from your last 10 conversations, highlighting patterns in tool usage, raw shell commands, and high-level workflows.
 
-2. Repeated Tool Sequences (Potential for bulk operations or new MCP):
-  - view_file called 3 times in a row (ending around step 14)
-  - run_command called 8 times in a row (ending around step 129)
+---
 
-3. Shell Commands Executed (Potential for scripting):
-  - [2x] python3 -c "import json..."
-  - [1x] ps aux | grep auditor.py
-  - [1x] lsof -p 8589 | grep cwd
+## 📊 Audit Metadata Summary
+- **Total Steps (JSONL lines) parsed:** 2160
+- **Total Tool Calls analyzed:** 500
+- **Total User Prompts extracted:** 220
+- **Prompt Extraction Mode:** all
+- **Conversations analyzed:** 10
 
-4. Largest Context Hogs (Content > 10,000 chars):
+---
 
-5. Distinct Tasks Performed (User Prompts):
-  - Convo 9c4ec44a-d76e-43be-843d-9f4853b17bdf:
-      * "Audit my last conversation and tell me what new skills I should write."
+## 🧠 Semantic Task Analysis
+
+By analyzing the distinct tasks performed across these conversations, several recurring workflows have emerged:
+
+### 1. The "Pedantic Reviewer" Workflow
+**The Pattern:** You frequently ask the agent to act as a strict reviewer or enforce nits and styleguides.
+- *"Please review this build.sh change pedantically. Use our styleguide too"*
+- *"Please apply all teh review suggestions"*
+- *"Please follow the guidance in our styleguide"*
+- *"Ok, I like to use teh dart recommended lints. PLease add those to this project."*
+
+**Recommendation:** Build a **`code-reviewer`** or **`style-enforcer`** skill. Instead of constantly reminding the agent to "be pedantic" or "use the styleguide", you can create a skill that automatically loads your team's style KIs, runs the appropriate linter (`dart analyze`), and applies all fixes automatically when invoked.
+
+### 2. The "Cross-Repository Porting" Workflow
+**The Pattern:** You frequently ask the agent to study a Pull Request in one repository and replicate the architectural changes in another repository.
+- *"Create a change for the dart plugin comparable to this: [link]"*
+- *"Update the flutter plugin based on the changes in [link]"*
+
+**Recommendation:** Build a **`port-pr`** skill. This skill would instruct the agent on exactly how to fetch a PR via the GitHub MCP, read the diff, map the file structure of the origin repository to the current repository, and apply the conceptual changes methodically. 
+
+### 3. The "Bug Reproduction & Testing" Workflow
+**The Pattern:** You often link to GitHub issues and ask for help reproducing them, followed by unit test assistance.
+- *"Look at the bug reported in [link]. Assess and propose a solution."*
+- *"How can I reproduce this bug?"*
+- *"Hrmpfh. No luck. Could you help with the unit test?"*
+- *"I don't like the use of reflection. Could you make the function visible and mark as `@visibleForTesting`?"*
+
+**Recommendation:** Build a **`triage-issue`** skill. When invoked with a GitHub issue link, the agent would automatically fetch the issue body, read the stack trace, search the codebase for the failing lines, and generate a scaffolded unit test designed to reproduce the bug *before* attempting to fix it. It could also codify your preference for `@visibleForTesting` over reflection!
+
+### 4. The "Documentation Editor" Workflow
+**The Pattern:** You frequently iterate on documentation, asking for specific formatting constraints.
+- *"Could you update the README to clarify..."*
+- *"Could you compress this answer into 2-3 sentences?"*
+- *"Could you update the README but maybe with a shortened example?"*
+
+**Recommendation:** Build a **`doc-writer`** skill. This skill could contain your standard rules for brevity, maximum sentence length, and formatting preferences so you don't have to manually prompt the agent to "compress" or "shorten" its output.
+
+---
+
+## ⚙️ Execution Metrics
+
+### 1. Tool Usage Frequencies (Top 5)
+- `run_command`: 326 uses
+- `view_file`: 122 uses
+- `replace_file_content`: 105 uses
+- `write_to_file`: 67 uses
+- `list_dir`: 59 uses
+
+### 2. The "Global Gap" (Missing System Tools)
+**Pattern:** `git status` was executed **37 times** across 3 different conversations and 4 different repositories. `git diff` was run **19 times**.
+**Recommendation:** A dedicated **Git MCP Server** would drastically cut down on `run_command` overhead and provide the agent with semantic data rather than raw terminal strings.
+
+### 3. The "Iterative Struggle" (Tree Crawling)
+**Pattern:** The `list_dir` tool was called 3+ consecutive times in a row on 9 different occasions across 5 conversations.
+**Recommendation:** A **Semantic Search / Codebase Indexing MCP** (like Bloop or Sourcegraph) could allow the agent to jump straight to the file it needs instead of guessing folder structures.
+
+### 4. The "Project Boilerplate" (Local Testing Loops)
+**Pattern:** `./tool/check_agent_skills.sh` was run 10 times in one repo. `./gradlew test --tests...` was run 7 times. 
+**Recommendation:** Create a `.agents/skills/test_workflow.md` file in those specific repositories that tells the agent exactly how to run tests in that codebase so it never has to guess or rediscover the correct build flags.
 ```
 
 ---
@@ -128,6 +180,7 @@ Once the skills are installed, you can invoke them in your agent chat interface 
    Type the slash command directly in the chat (if applicable):
    ```text
    /estimate-conversation-tokens
+   /conversation-auditor
    ```
 
 2. **Via Natural Language:**
