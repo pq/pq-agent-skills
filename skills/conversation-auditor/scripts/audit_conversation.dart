@@ -3,17 +3,21 @@ import 'dart:io';
 
 void main(List<String> args) async {
   if (args.isEmpty) {
-    print('Usage: dart run audit_conversation.dart <app_data_dir> [convo_id1 convo_id2 ...] [--last N]');
+    print('Usage: dart run audit_conversation.dart <app_data_dir> [convo_id1 convo_id2 ...] [--last N] [--prompts all|first|none]');
     exit(1);
   }
 
   var appDataDir = args[0];
   var targetConvos = <String>[];
+  var extractPrompts = 'first'; // default to first prompt only to keep output manageable
   
   for (var i = 1; i < args.length; i++) {
     if (args[i] == '--last' && i + 1 < args.length) {
       var n = int.tryParse(args[i + 1]) ?? 1;
       targetConvos.addAll(getLastNConversations(appDataDir, n));
+      i++;
+    } else if (args[i] == '--prompts' && i + 1 < args.length) {
+      extractPrompts = args[i + 1];
       i++;
     } else {
       targetConvos.add(args[i]);
@@ -35,6 +39,13 @@ void main(List<String> args) async {
   var commandTracker = <String, Map<String, dynamic>>{};
   var largeSteps = <Map<String, dynamic>>[];
   var sequenceTracker = <String, Map<String, dynamic>>{};
+  var userPrompts = <String, List<String>>{};
+  
+  var stats = {
+    'totalSteps': 0,
+    'totalToolCalls': 0,
+    'totalPromptsExtracted': 0,
+  };
 
   for (var convoId in targetConvos) {
     await auditSingleTranscript(
@@ -43,12 +54,20 @@ void main(List<String> args) async {
       toolCounts, 
       commandTracker, 
       largeSteps, 
-      sequenceTracker
+      sequenceTracker,
+      userPrompts,
+      extractPrompts,
+      stats,
     );
   }
 
   print('--- Aggregated Audit Report for ${targetConvos.length} Conversation(s) ---');
   print('Conversations analyzed: ${targetConvos.join(', ')}');
+  print('');
+  print('📊 Audit Metadata Summary:');
+  print('  - Total Steps (JSONL lines) parsed: ${stats['totalSteps']}');
+  print('  - Total Tool Calls analyzed: ${stats['totalToolCalls']}');
+  print('  - Total User Prompts extracted: ${stats['totalPromptsExtracted']}');
   
   print('\n1. Tool Usage Frequencies:');
   var sortedTools = toolCounts.entries.toList()
@@ -76,7 +95,7 @@ void main(List<String> args) async {
     // Format command to one line if it has newlines
     var cmdDisplay = entry.key.replaceAll('\n', r'\n');
     if (cmdDisplay.length > 80) {
-      cmdDisplay = cmdDisplay.substring(0, 77) + '...';
+      cmdDisplay = '${cmdDisplay.substring(0, 77)}...';
     }
     print('  - [${total}x] $cmdDisplay (across $convoCount convo(s), $repoCount repo(s))');
   }
@@ -85,6 +104,22 @@ void main(List<String> args) async {
   largeSteps.sort((a, b) => (b['length'] as int).compareTo(a['length'] as int));
   for (var ls in largeSteps.take(5)) {
     print('  - Step ${ls['step']} in convo ${ls['convo']} (${ls['type']} from ${ls['source']}): ${ls['length']} characters');
+  }
+
+  if (extractPrompts != 'none' && userPrompts.isNotEmpty) {
+    print('\n5. Distinct Tasks Performed (User Prompts):');
+    for (var convoId in targetConvos) {
+      if (userPrompts.containsKey(convoId)) {
+        print('  - Convo $convoId:');
+        for (var prompt in userPrompts[convoId]!) {
+          var cleanPrompt = prompt.replaceAll('\n', r'\n');
+          if (cleanPrompt.length > 200) {
+            cleanPrompt = '${cleanPrompt.substring(0, 197)}...';
+          }
+          print('      * "$cleanPrompt"');
+        }
+      }
+    }
   }
 }
 
@@ -117,6 +152,9 @@ Future<void> auditSingleTranscript(
   Map<String, Map<String, dynamic>> commandTracker,
   List<Map<String, dynamic>> largeSteps,
   Map<String, Map<String, dynamic>> sequenceTracker,
+  Map<String, List<String>> userPrompts,
+  String extractPrompts,
+  Map<String, int> stats,
 ) async {
   var transcriptPath = '$appDataDir/brain/$convoId/.system_generated/logs/transcript.jsonl';
   var file = File(transcriptPath);
@@ -124,6 +162,7 @@ Future<void> auditSingleTranscript(
 
   String? lastTool;
   int sequenceCount = 0;
+  bool hasExtractedFirstPrompt = false;
 
   var linesStream = file.openRead()
       .transform(utf8.decoder)
@@ -131,6 +170,7 @@ Future<void> auditSingleTranscript(
 
   await for (var line in linesStream) {
     if (line.trim().isEmpty) continue;
+    stats['totalSteps'] = (stats['totalSteps'] ?? 0) + 1;
     
     Map<String, dynamic> step;
     try {
@@ -140,14 +180,25 @@ Future<void> auditSingleTranscript(
     }
 
     var stepIndex = step['step_index'] ?? 0;
+    var type = step['type'];
     var content = step['content']?.toString() ?? '';
     var contentLength = content.length;
+
+    // Extract User Prompts
+    if (type == 'USER_INPUT' && (extractPrompts == 'all' || (extractPrompts == 'first' && !hasExtractedFirstPrompt))) {
+      var text = content.trim();
+      if (text.isNotEmpty) {
+        userPrompts.putIfAbsent(convoId, () => []).add(text);
+        hasExtractedFirstPrompt = true;
+        stats['totalPromptsExtracted'] = (stats['totalPromptsExtracted'] ?? 0) + 1;
+      }
+    }
 
     if (contentLength > 10000) {
       largeSteps.add({
         'convo': convoId,
         'step': stepIndex,
-        'type': step['type'],
+        'type': type,
         'source': step['source'],
         'length': contentLength,
       });
@@ -157,6 +208,7 @@ Future<void> auditSingleTranscript(
     if (toolCalls is List && toolCalls.isNotEmpty) {
       for (var tc in toolCalls) {
         if (tc is! Map) continue;
+        stats['totalToolCalls'] = (stats['totalToolCalls'] ?? 0) + 1;
         
         dynamic toolNameRaw = tc['name'];
         if (toolNameRaw == null && tc['function'] is Map) {

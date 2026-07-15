@@ -10,7 +10,7 @@ A collection of custom skills for agentic workflows.
 Analyzes the full conversation transcript logs (`transcript_full.jsonl`) for the **current active conversation** (automatically resolved via environment variables) to estimate character lengths, model invocations (turns), cumulative input/output tokens, and context caching savings.
 
 ### 🕵️ Conversation Auditor
-Audits previous conversation transcripts to help you identify ways to tune your agentic coding experience. It looks for commonly performed actions, repetitive low-level commands, tool sequences that can be aggregated, and places where the context window is being heavily utilized.
+Audits previous conversation transcripts to help you identify ways to tune your agentic coding experience. It looks for commonly performed actions, repetitive low-level commands, tool sequences that can be aggregated, and places where the context window is being heavily utilized. It can also extract your raw prompts (`--prompts all`) to perform a Semantic Task Analysis and recommend new workflow-based skills.
 
 ---
 
@@ -88,6 +88,10 @@ When the auditor skill is executed on a past conversation, it generates a report
   - [1x] lsof -p 8589 | grep cwd
 
 4. Largest Context Hogs (Content > 10,000 chars):
+
+5. Distinct Tasks Performed (User Prompts):
+  - Convo 9c4ec44a-d76e-43be-843d-9f4853b17bdf:
+      * "Audit my last conversation and tell me what new skills I should write."
 ```
 
 ---
