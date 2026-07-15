@@ -149,7 +149,17 @@ By analyzing the distinct tasks performed across these conversations, several re
 
 ## 🚀 Installation
 
-### Option 1: Global Setup (Available everywhere)
+### Option 1: Using `npx` (Recommended)
+You can use the `skills` npm package to automatically download and link these skills globally:
+```bash
+# Install all skills in the repository
+npx skills add pq/pq-agent-skills
+
+# Or install a specific skill
+npx skills add pq/pq-agent-skills --skill conversation-auditor
+```
+
+### Option 2: Global Setup (Manual)
 Clone the repository and symlink the skills to your global config directory:
 ```bash
 git clone https://github.com/pq/pq-agent-skills.git ~/src/pq-agent-skills
@@ -158,7 +168,7 @@ ln -s ~/src/pq-agent-skills/skills/estimate-conversation-tokens ~/.gemini/config
 ln -s ~/src/pq-agent-skills/skills/conversation-auditor ~/.gemini/config/skills/conversation-auditor
 ```
 
-### Option 2: Workspace Integration (Project-specific)
+### Option 3: Workspace Integration (Project-specific)
 Add this repository to your project's `.agents/skills.json` under your `entries` paths:
 ```json
 {
