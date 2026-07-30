@@ -12,6 +12,9 @@ Analyzes the full conversation transcript logs (`transcript_full.jsonl`) for the
 ### 🕵️ Conversation Auditor
 Audits previous conversation transcripts to help you identify ways to tune your agentic coding experience. It looks for commonly performed actions, repetitive low-level commands, tool sequences that can be aggregated, and places where the context window is being heavily utilized. It can also extract your raw prompts (`--prompts all`) to perform a Semantic Task Analysis and recommend new workflow-based skills.
 
+### 📉 Analyze Workflow Failures
+Fetches recent GitHub Actions workflow runs across multiple repositories, filters out Dependabot runs for separate statistics, and groups failure causes to highlight the top recurring issues. Allows you to easily spot broken tests or systemic infrastructure issues across your GitHub projects.
+
 ---
 
 ## 📊 Example Run Output
@@ -147,6 +150,64 @@ By analyzing the distinct tasks performed across these conversations, several re
 
 ---
 
+## 📉 Example Run Output (Analyze Workflow Failures)
+
+When invoked, the skill outputs a markdown report containing overall workflow success rates and groups frequent failure causes:
+
+### Workflow Failures Report (2026-07-23 to 2026-07-30)
+
+#### Repository: `flutter/dart-intellij-third-party`
+##### Overview (Non-Dependabot)
+- **Total Runs:** 260
+- **Successes:** 215 (92.3%)
+- **Failures:** 18 (7.7%)
+- **Action Required:** 24
+
+##### Overview (Dependabot)
+- **Total Runs:** 20
+- **Successes:** 16 (80.0%)
+- **Failures:** 4 (20.0%)
+
+##### Failure Analysis
+###### Top Repeated Causes
+- **DartBridgeLspServerTest**: 8 occurrences
+- **Exception: Override failed for com.intellij.openapi.project.impl.ProjectStoreFac**: 4 occurrences
+- **Unknown**: 3 occurrences
+
+###### [presubmit - main](https://github.com/flutter/dart-intellij-third-party/actions/runs/30557480312)
+- **Date:** 2026-07-30T15:36:04Z
+- **Run ID:** `30557480312` (Click header for logs)
+- **Cause:**
+  ```text
+  Unit Test Action	2026-07-30T16:12:35.7454780Z > Task :checkKotlinGradlePluginConfigurationErrors SKIPPED
+  Unit Test Action	2026-07-30T16:14:34.2242670Z DartBridgeLspServerTest > testDiagnosticServerRequest FAILED
+  Unit Test Action	2026-07-30T16:14:34.2248260Z     junit.framework.AssertionFailedError at DartBridgeLspServerTest.kt:198
+  ```
+
+###### [presubmit - chore/jmora/handle-SkipDefaultValuesSerializationFilters-deprecation](https://github.com/flutter/dart-intellij-third-party/actions/runs/30396648841)
+- **Date:** 2026-07-28T20:30:44Z
+- **Run ID:** `30396648841` (Click header for logs)
+- **Cause:**
+  ```text
+  UNKNOWN STEP	2026-07-28T20:36:03.9988213Z > Task :checkKotlinGradlePluginConfigurationErrors SKIPPED
+  UNKNOWN STEP	2026-07-28T20:39:58.8866868Z DartBridgeLspServerTest > testDiagnosticServerRequest FAILED
+  UNKNOWN STEP	2026-07-28T20:39:58.8868035Z     junit.framework.AssertionFailedError at DartBridgeLspServerTest.kt:198
+  ```
+
+###### [presubmit - main](https://github.com/flutter/dart-intellij-third-party/actions/runs/30316292337)
+- **Date:** 2026-07-28T00:06:21Z
+- **Run ID:** `30316292337` (Click header for logs)
+- **Cause:**
+  ```text
+  UNKNOWN STEP	2026-07-28T00:15:49.8685595Z > Task :checkKotlinGradlePluginConfigurationErrors SKIPPED
+  UNKNOWN STEP	2026-07-28T00:19:28.0063108Z DartBridgeLspServerTest > testHandleDasResponse FAILED
+  UNKNOWN STEP	2026-07-28T00:19:28.0177125Z     java.util.concurrent.ExecutionException at DartBridgeLspServerTest.kt:189
+  ```
+
+*(Truncated...)*
+
+---
+
 ## 🚀 Installation
 
 ### Option 1: Using `npx` (Recommended)
@@ -166,6 +227,7 @@ git clone https://github.com/pq/pq-agent-skills.git ~/src/pq-agent-skills
 mkdir -p ~/.gemini/config/skills
 ln -s ~/src/pq-agent-skills/skills/estimate-conversation-tokens ~/.gemini/config/skills/estimate-conversation-tokens
 ln -s ~/src/pq-agent-skills/skills/conversation-auditor ~/.gemini/config/skills/conversation-auditor
+ln -s ~/src/pq-agent-skills/skills/analyze-workflow-failures ~/.gemini/config/skills/analyze-workflow-failures
 ```
 
 ### Option 3: Workspace Integration (Project-specific)
@@ -190,6 +252,7 @@ Once the skills are installed, you can invoke them in your agent chat interface 
    ```text
    /estimate-conversation-tokens
    /conversation-auditor
+   /analyze-workflow-failures
    ```
 
 2. **Via Natural Language:**
