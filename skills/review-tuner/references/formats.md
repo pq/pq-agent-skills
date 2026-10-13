@@ -126,46 +126,98 @@ also has `maxChars`, `humanCommentsByRole` (also excluding PR authors),
 `botThreads`, `botThreadsResolved`, `botThreadsWithHumanReply`, `topPaths`,
 and `prs`.
 
-`collect.dart digest --corpus <file> --select <regex> [--path <regex>] [--bot]
-[--output-file <x.json>]` counts comments in non-automation PRs whose full
-body matches (case-insensitive; inline flags like `(?i)` aren't supported);
-`--path` filters by comment path, also case-insensitively (comments without
-a path never match it). Default: substantive human comments (not
-trivial like "LGTM"; human replies in bot threads always count); `--bot`: the
-configured reviewer bot's comments only. `n`, `weighted`, `prs`, and
-`reviewers` leave out comments by the PR's own author: those are still
+`collect.dart digest --corpus <file> --select <regex> [--path <regex>]
+[--bot [--rebuttals <ids|@file>]] [--output-file <x.json>]` counts comments in
+non-automation PRs whose full body matches (case-insensitive; inline flags
+like `(?i)` aren't supported); `--path` filters by comment path, also
+case-insensitively (comments without a path never match it). It never writes
+the digest files. A run with no matches exits 0 with `n: 0`; an invalid regex
+exits 2. Every match has `match`: the first span the regex matched, with
+about 40 characters of context on each side (`…` marks a cut), so you can
+see why it matched (the markdown shows it under the match as `match:`).
+
+**Human mode** (default): substantive human comments (not trivial like
+"LGTM"; human replies in bot threads always count). `n`, `weighted`, `prs`,
+and `reviewers` leave out comments by the PR's own author: those are still
 listed in `matches` (with `isPrAuthor`) and counted as `prAuthorComments`.
-With `--bot` there is no `weighted`; instead `inline` and `reviewSummaries`
-count the matched bot inline comments and review summaries, and `replies`,
-`repliesByRole` (role → count), and `authorReplies` count the human replies
-in the matched threads (each once), **including** the PR author's. Quote
-`inline` as the bot's claim count, and read the replies: many are
-acknowledgments, not rebuttals.
-It never writes the digest files. A run with no matches exits 0 with
-`n: 0`; an invalid regex exits 2.
 
 ```json
 {"repo": "o/n", "corpus": "<path>", "select": "copyright", "path": "…",
- "comments": "human|bot", "n": 2, "weighted": 2.0, "prAuthorComments": 0,
+ "comments": "human", "n": 2, "weighted": 2.0, "prAuthorComments": 0,
  "prs": [596, 663],
  "reviewers": [{"login": "pq", "role": "maintainer"}],
- "inline": 2, "reviewSummaries": 0, "withHumanReply": 0, "resolved": 0,
- "replies": 0, "repliesByRole": {}, "authorReplies": 0,
  "matches": [{"pr": 596, "author": "pq", "role": "maintainer", "weight": 1.0,
               "isPrAuthor": true, "kind": "inline", "path": "…", "line": 1,
-              "commitId": "6e97ae9…",
-              "humanReply": false, "authorReply": true, "resolved": true,
-              "text": "160-char excerpt", "url": "…#discussion_r123"}]}
+              "commitId": "6e97ae9…", "text": "160-char excerpt",
+              "match": "…context copyright context…",
+              "url": "…#discussion_r123"}]}
 ```
 
-`inline`, `reviewSummaries`, `withHumanReply`, `resolved`, `replies`,
-`repliesByRole`, `authorReplies`, and the per-match `humanReply`/`resolved`
-(plus `authorReply`, set only when the PR author replied) appear only with
-`--bot`, and `weighted` only without it; `isPrAuthor`, `path`, `line`,
-`commitId`, and `url` only when known. `commitId` (also on digest comments and bot threads; the markdown
-shows its first 10 characters as `@<sha>`) is the commit an inline comment
-was made on: use it as a case's `commit`. A
-bot comment has a human reply when a non-bot comment follows it in the same
+**`--bot`**: the configured reviewer bot's comments only. `n` (= `inline`)
+counts its matched **inline** comments and `prs` lists the PRs with one;
+matched review summaries are listed in `matches` but only counted as
+`reviewSummaries`. There is no `weighted`, `prAuthorComments`, or
+`reviewers`. Quote `inline` as the bot's claim count. Each match lists its
+human `replies` (`id`, the GitHub comment id; `author`, `role`, `isPrAuthor`,
+`weight`, `url`, `text` up to 300 characters; the markdown shows each as
+`↳ [r:<id>] who: text url`); `replies`, `repliesByRole` (role → count), and
+`authorReplies` count them over all matches (each reply once), **including**
+the PR author's.
+
+The script doesn't decide which replies are rebuttals: you do, by reading
+them. `--rebuttals <ids>` (only with `--bot`) takes the rebuttal reply ids,
+comma-separated (`--rebuttals 123,456`) or as `@<file>` with one id per line;
+in the file, `#` starts a comment, so note why each one is a rebuttal:
+
+```text
+# Platform floor rebuttals, 2026-10-13
+3770997394  # #600 author: suggested API isn't available on the floor
+4135974462  # #695 author: the class the bot named doesn't exist
+```
+
+Listed replies get `"rebuttal": true` (the others `false`), and the result
+adds `rebuttals`, `authorRebuttals`, `rebuttalsByRole`, `rebuttalPrs`, and
+`rebuttalWeight`, counted as in [rubric.md](rubric.md): at most one rebuttal
+per (person, PR), weighted at the person's role weight, or role weight × 0.5
+for the PR's author. `rebuttalReplies` is the number of listed replies
+before that dedup. `otherReplies` lists the replies not listed (with `pr` and
+`id`), so acceptances (counter-evidence) stay visible. An id that isn't a
+reply to a matched bot comment exits 1 and names the unknown ids (the reply
+may sit on a bot comment the `--select` regex doesn't match); a malformed or
+missing ids file also exits 1, and a bad id on the command line exits 2.
+Without `--rebuttals` there are no rebuttal numbers, and the markdown says
+"classify replies: pass the rebuttal reply ids with --rebuttals".
+
+```json
+{"repo": "o/n", "corpus": "<path>", "select": "is invalid in Dart",
+ "comments": "bot", "n": 2, "prs": [596], "inline": 2, "reviewSummaries": 1,
+ "withHumanReply": 1, "resolved": 1,
+ "replies": 2, "repliesByRole": {"maintainer": 2}, "authorReplies": 1,
+ "rebuttals": 1, "rebuttalReplies": 1, "authorRebuttals": 1,
+ "rebuttalsByRole": {"maintainer": 1}, "rebuttalPrs": [596],
+ "rebuttalWeight": 0.5,
+ "otherReplies": [{"pr": 596, "id": 125, "author": "…", "role": "maintainer",
+                   "isPrAuthor": false, "weight": 1.0, "rebuttal": false,
+                   "url": "…", "text": "Done."}],
+ "matches": [{"pr": 596, "author": "gemini-code-assist[bot]", "role": "bot",
+              "weight": 0.5, "kind": "inline", "path": "…", "line": 1,
+              "commitId": "6e97ae9…",
+              "humanReply": true, "authorReply": true, "resolved": true,
+              "text": "160-char excerpt", "match": "…is invalid in Dart…",
+              "url": "…#discussion_r123",
+              "replies": [{"id": 124, "author": "pq", "role": "maintainer",
+                           "isPrAuthor": true, "weight": 1.0,
+                           "rebuttal": true, "url": "…#discussion_r124",
+                           "text": "This is valid since Dart 3.8."}]}]}
+```
+
+The per-match `humanReply`/`resolved` (plus `authorReply`, set only when the
+PR author replied) and `replies` appear only with `--bot`; `rebuttal` only
+with `--rebuttals`; `isPrAuthor` (on matches), `path`, `line`, `commitId`,
+and `url` only when known. `commitId` (also on digest comments and bot
+threads; the markdown shows its first 10 characters as `@<sha>`) is the
+commit an inline comment was made on: use it as a case's `commit`. A bot
+comment has a human reply when a non-bot comment follows it in the same
 review thread.
 
 ## `eval.json`

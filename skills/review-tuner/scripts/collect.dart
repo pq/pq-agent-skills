@@ -12,8 +12,8 @@
 ///         [--output-file <digest.json>] [--stdout] [--max-chars 300]
 ///         [--config <path>]
 ///     dart collect.dart digest --corpus <corpus.jsonl> --select <regex>
-///         [--path <regex>] [--bot] [--output-file <select.json>]
-///         [--repo <owner/name>] [--config <path>]
+///         [--path <regex>] [--bot [--rebuttals <ids|@file>]]
+///         [--output-file <select.json>] [--repo <owner/name>] [--config <path>]
 ///
 /// Outputs, counting rules, and exit codes: `references/formats.md`.
 library;
@@ -35,8 +35,8 @@ Usage:
       [--output-file <digest.json>] [--stdout] [--max-chars 300]
       [--config <path>]
   dart collect.dart digest --corpus <corpus.jsonl> --select <regex>
-      [--path <regex>] [--bot] [--output-file <select.json>]
-      [--repo <owner/name>] [--config <path>]''';
+      [--path <regex>] [--bot [--rebuttals <ids|@file>]]
+      [--output-file <select.json>] [--repo <owner/name>] [--config <path>]''';
 
 /// GitHub search returns at most this many results per query.
 const _searchCap = 1000;
@@ -46,6 +46,16 @@ const _defaultMaxChars = 300;
 
 /// Characters of comment text shown per `--select` match.
 const _selectExcerptLength = 160;
+
+/// Characters of context shown on each side of a `--select` match's span.
+const _matchContext = 40;
+
+/// Characters of reply text shown per human reply to a `--bot` match.
+const _replyExcerptLength = 300;
+
+/// A rebuttal by the PR's own author counts at this share of its role
+/// weight (`references/rubric.md`).
+const _authorRebuttalFactor = 0.5;
 
 /// Human replies in bot threads keep this many times `--max-chars`, since
 /// they carry the verdict on the bot's comment.
@@ -98,6 +108,7 @@ Future<void> main(List<String> argv) => guarded(usage, argv, () async {
             'config',
             'select',
             'path',
+            'rebuttals',
           }, flags: {
             'stdout',
             'bot',
@@ -748,12 +759,15 @@ void _list(StringBuffer b, String title, List<String> items) {
 /// Collapses whitespace, turns badge images (`![high](...)`) into `[high]`,
 /// and truncates to [max] characters.
 String excerpt(String body, int max) {
-  var text = body
-      .replaceAllMapped(RegExp(r'!\[([^\]]*)\]\([^)]*\)'), (m) => '[${m[1]}]')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
+  var text = _flatten(body);
   return text.length <= max ? text : '${text.substring(0, max)}…';
 }
+
+/// [body] with badge images as `[high]` and whitespace collapsed.
+String _flatten(String body) => body
+    .replaceAllMapped(RegExp(r'!\[([^\]]*)\]\([^)]*\)'), (m) => '[${m[1]}]')
+    .replaceAll(RegExp(r'\s+'), ' ')
+    .trim();
 
 /// [path] without a trailing `.jsonl` or `.json`.
 String _base(String path) => path.replaceFirst(RegExp(r'\.jsonl?$'), '');
@@ -776,6 +790,31 @@ RegExp _regex(String option, String pattern) {
   } on FormatException catch (e) {
     usageError('Invalid --$option regex: ${e.message}');
   }
+}
+
+/// The reply ids in a `--rebuttals` value: comma-separated, or `@<file>`
+/// with one id per line (`#` starts a comment). A bad id on the command
+/// line is a usage error; a missing or malformed file fails.
+Set<int> _replyIds(String value) {
+  if (!value.startsWith('@')) {
+    var ids = value.split(',').map((s) => int.tryParse(s.trim()));
+    if (ids.contains(null)) {
+      usageError('--rebuttals must be comma-separated reply ids or @<file>.');
+    }
+    return ids.cast<int>().toSet();
+  }
+  var path = value.substring(1);
+  var file = File(path);
+  if (!file.existsSync()) fail('Rebuttals file not found: $path');
+  var ids = <int>{};
+  var lines = file.readAsLinesSync();
+  for (var (i, line) in lines.indexed) {
+    var text = line.split('#').first.trim();
+    if (text.isEmpty) continue;
+    ids.add(int.tryParse(text) ??
+        fail('$path:${i + 1}: expected one reply id per line, got "$text".'));
+  }
+  return ids;
 }
 
 Map<String, Object?> _digestComment(Comment c, int max) => {
@@ -924,11 +963,18 @@ void runDigest(Map<String, String> options) {
       options['corpus'] ?? usageError('Missing --corpus <corpus.jsonl>.');
   var select = options['select'];
   if (select == null) {
-    for (var flag in ['path', 'bot']) {
+    for (var flag in ['path', 'bot', 'rebuttals']) {
       if (options.containsKey(flag)) usageError('--$flag requires --select.');
     }
   }
+  if (options.containsKey('rebuttals') && !options.containsKey('bot')) {
+    usageError('--rebuttals requires --bot.');
+  }
   var selectRegex = select == null ? null : _regex('select', select);
+  var rebuttals = switch (options['rebuttals']) {
+    var ids? => _replyIds(ids),
+    null => null,
+  };
   var pathRegex = switch (options['path']) {
     var path? => _regex('path', path),
     null => null,
@@ -947,7 +993,9 @@ void runDigest(Map<String, String> options) {
       'repo': repo.slug,
       'corpus': corpusPath,
       ...selectComments(corpus, selectRegex, pathRegex,
-          bot: repo.bot, botComments: options.containsKey('bot')),
+          bot: repo.bot,
+          botComments: options.containsKey('bot'),
+          rebuttals: rebuttals),
     };
     if (options['output-file'] case var path?) writeJson(path, result);
     stdout.write(renderSelect(result));
@@ -985,15 +1033,18 @@ void _redigest(List<PullRequest> corpus, RepoConfig repo, String corpusPath,
 /// path matches [path], if given): substantive human comments (plus every
 /// human reply in a [bot] thread), or with [botComments] those by the
 /// reviewer [bot] (other bots, such as CLA or merge bots, are skipped).
-/// Counts leave out comments by the PR's own author; with [botComments],
-/// human replies in the matched threads are counted by role, PR authors
-/// included.
+/// Human-mode counts leave out comments by the PR's own author. With
+/// [botComments], counts cover the bot's inline comments (review summaries
+/// are listed and counted apart), each match lists its human replies with
+/// their comment ids, and the replies whose ids are in [rebuttals] count as
+/// rebuttals, weighted as in `references/rubric.md`. An id in [rebuttals]
+/// that is not such a reply fails.
 Map<String, Object?> selectComments(
     List<PullRequest> corpus, RegExp text, RegExp? path,
-    {required String bot, required bool botComments}) {
+    {required String bot, required bool botComments, Set<int>? rebuttals}) {
   var matches = <Map<String, Object?>>[];
   // With [botComments]: human replies in the matched threads, once each.
-  var replies = <(int, int), Comment>{};
+  var replies = <(int, int), Map<String, Object?>>{};
   for (var pr in corpus.where((p) => p.considered)) {
     var botRoots = {for (var r in pr.botThreadRoots(bot)) r.id};
     bool wanted(Comment c) => botComments
@@ -1002,52 +1053,115 @@ Map<String, Object?> selectComments(
     for (var c in pr.comments.where(wanted)) {
       if (!text.hasMatch(c.body)) continue;
       if (path != null && !path.hasMatch(c.path ?? '')) continue;
-      matches.add(_selectMatch(pr, c, withThread: botComments));
+      var m = _selectMatch(pr, c, text);
       if (botComments) {
+        var thread = <Map<String, Object?>>[];
         for (var r in pr.humanReplies(c)) {
-          replies[(pr.number, r.id)] = r;
+          var reply = _selectReply(pr, r, rebuttals);
+          thread.add(reply);
+          replies[(pr.number, r.id)] = reply;
         }
+        m['replies'] = thread;
       }
+      matches.add(m);
     }
   }
-  var repliesByRole = <String, int>{};
-  for (var r in replies.values) {
-    repliesByRole[r.role] = (repliesByRole[r.role] ?? 0) + 1;
+  if (rebuttals != null) {
+    var unknown = rebuttals.difference({for (var (_, id) in replies.keys) id});
+    if (unknown.isNotEmpty) {
+      fail('Not a reply to a matched bot comment: ${unknown.join(', ')}. '
+          'Check the ids; the reply may sit on a bot comment that the '
+          '--select regex does not match.');
+    }
   }
+  return {
+    'select': text.pattern,
+    if (path != null) 'path': path.pattern,
+    'comments': botComments ? 'bot' : 'human',
+    ...botComments
+        ? _botCounts(matches, replies, classified: rebuttals != null)
+        : _humanCounts(matches),
+    'matches': matches,
+  };
+}
+
+Map<String, Object?> _humanCounts(List<Map<String, Object?>> matches) {
   var counted = matches.where((m) => m['isPrAuthor'] != true).toList();
   var reviewers = <String, String>{
     for (var m in counted) m['author'] as String: m['role'] as String,
   };
   return {
-    'select': text.pattern,
-    if (path != null) 'path': path.pattern,
-    'comments': botComments ? 'bot' : 'human',
     'n': counted.length,
-    if (!botComments)
-      'weighted': counted.fold<double>(
-          0, (sum, m) => sum + (m['weight'] as num? ?? 0).toDouble()),
+    'weighted': counted.fold<double>(
+        0, (sum, m) => sum + (m['weight'] as num? ?? 0).toDouble()),
     'prAuthorComments': matches.length - counted.length,
     'prs': {for (var m in counted) m['pr']}.toList(),
     'reviewers': [
       for (var MapEntry(:key, :value) in reviewers.entries)
         {'login': key, 'role': value},
     ],
-    if (botComments) ...{
-      'inline': matches.where((m) => m['kind'] == 'inline').length,
-      'reviewSummaries': matches.where((m) => m['kind'] == 'review').length,
-      'withHumanReply': matches.where((m) => m['humanReply'] == true).length,
-      'resolved': matches.where((m) => m['resolved'] == true).length,
-      'replies': replies.length,
-      'repliesByRole': repliesByRole,
-      'authorReplies': replies.values.where((r) => r.isPrAuthor).length,
-    },
-    'matches': matches,
   };
 }
 
-Map<String, Object?> _selectMatch(PullRequest pr, Comment c,
-        {required bool withThread}) =>
-    {
+/// Counts for `--bot`: [replies] are keyed by (PR, comment id). With
+/// [classified], rebuttals count once per (person, PR), a PR author's at
+/// [_authorRebuttalFactor] x role weight.
+Map<String, Object?> _botCounts(List<Map<String, Object?>> matches,
+    Map<(int, int), Map<String, Object?>> replies,
+    {required bool classified}) {
+  var inline = matches.where((m) => m['kind'] == 'inline').toList();
+  var repliesByRole = <String, int>{};
+  for (var r in replies.values) {
+    repliesByRole[r['role'] as String] = (repliesByRole[r['role']] ?? 0) + 1;
+  }
+  var rebuttals =
+      <(String, int), ({String role, bool author, double weight})>{};
+  for (var MapEntry(key: (pr, _), value: r) in replies.entries) {
+    if (r['rebuttal'] != true) continue;
+    var author = r['isPrAuthor'] == true;
+    rebuttals.putIfAbsent(
+        (r['author'] as String, pr),
+        () => (
+              role: r['role'] as String,
+              author: author,
+              weight: (r['weight'] as num).toDouble() *
+                  (author ? _authorRebuttalFactor : 1),
+            ));
+  }
+  var rebuttalsByRole = <String, int>{};
+  for (var r in rebuttals.values) {
+    rebuttalsByRole[r.role] = (rebuttalsByRole[r.role] ?? 0) + 1;
+  }
+  return {
+    'n': inline.length,
+    'prs': {for (var m in inline) m['pr']}.toList(),
+    'inline': inline.length,
+    'reviewSummaries': matches.length - inline.length,
+    'withHumanReply':
+        matches.where((m) => (m['replies'] as List).isNotEmpty).length,
+    'resolved': matches.where((m) => m['resolved'] == true).length,
+    'replies': replies.length,
+    'repliesByRole': repliesByRole,
+    'authorReplies':
+        replies.values.where((r) => r['isPrAuthor'] == true).length,
+    if (classified) ...{
+      'rebuttals': rebuttals.length,
+      'rebuttalReplies':
+          replies.values.where((r) => r['rebuttal'] == true).length,
+      'authorRebuttals': rebuttals.values.where((r) => r.author).length,
+      'rebuttalsByRole': rebuttalsByRole,
+      'rebuttalPrs': {for (var (_, pr) in rebuttals.keys) pr}.toList(),
+      'rebuttalWeight':
+          rebuttals.values.fold<double>(0, (sum, r) => sum + r.weight),
+      'otherReplies': [
+        for (var MapEntry(key: (pr, _), value: r) in replies.entries)
+          if (r['rebuttal'] != true) {'pr': pr, ...r},
+      ],
+    },
+  };
+}
+
+Map<String, Object?> _selectMatch(PullRequest pr, Comment c, RegExp text) => {
       'pr': pr.number,
       'author': c.author,
       'role': c.role,
@@ -1057,50 +1171,96 @@ Map<String, Object?> _selectMatch(PullRequest pr, Comment c,
       if (c.path != null) 'path': c.path,
       if (c.line != null) 'line': c.line,
       if (c.commitId != null) 'commitId': c.commitId,
-      if (withThread) ...{
+      if (c.isBot) ...{
         'humanReply': pr.humanReplies(c).isNotEmpty,
         if (pr.humanReplies(c).any((r) => r.isPrAuthor)) 'authorReply': true,
         'resolved': c.resolved == true,
       },
       'text': excerpt(c.body, _selectExcerptLength),
+      'match': _span(c.body, text),
       if (pr.commentUrl(c) case var url?) 'url': url,
     };
 
+/// A human reply to a `--bot` match, with its comment id; with [rebuttals],
+/// `rebuttal` says whether the id is listed.
+Map<String, Object?> _selectReply(
+        PullRequest pr, Comment r, Set<int>? rebuttals) =>
+    {
+      'id': r.id,
+      'author': r.author,
+      'role': r.role,
+      'isPrAuthor': r.isPrAuthor,
+      'weight': r.weight,
+      if (rebuttals != null) 'rebuttal': rebuttals.contains(r.id),
+      if (pr.commentUrl(r) case var url?) 'url': url,
+      'text': excerpt(r.body, _replyExcerptLength),
+    };
+
+/// The first span of [body] that [text] matches, with [_matchContext]
+/// characters on each side (`…` marks a cut). Matched in the [_flatten]ed
+/// body when possible, so badges and line breaks read cleanly.
+String _span(String body, RegExp text) {
+  var flat = _flatten(body);
+  if (text.firstMatch(flat) == null) flat = body;
+  var match = text.firstMatch(flat)!;
+  var start = (match.start - _matchContext).clamp(0, flat.length);
+  var end = (match.end + _matchContext).clamp(0, flat.length);
+  var span = excerpt(
+      flat.substring(start, end), _selectExcerptLength + 2 * _matchContext);
+  return '${start > 0 ? '…' : ''}$span'
+      '${end < flat.length && !span.endsWith('…') ? '…' : ''}';
+}
+
 String renderSelect(Map<String, Object?> s) {
+  var bot = s['comments'] == 'bot';
   var b = StringBuffer()
     ..writeln('# Select: /${s['select']}/'
         '${s['path'] == null ? '' : ' path /${s['path']}/'} '
         '(${s['comments']} comments)')
-    ..writeln()
-    ..writeln('- comments: ${s['n']}');
+    ..writeln();
+  if (bot) {
+    b.writeln('- inline comments: ${s['n']}; review summaries (listed, not '
+        'counted): ${s['reviewSummaries']}');
+  } else {
+    b.writeln('- comments: ${s['n']}');
+  }
   if (s['weighted'] case num weighted) {
     b.writeln('- weighted: ${weighted.toStringAsFixed(1)}');
   }
   if (s['prAuthorComments'] case int n when n > 0) {
     b.writeln('- by the PR author (listed, not counted): $n');
   }
-  if (s['comments'] == 'bot') {
-    var byRole = [
-      for (var MapEntry(:key, :value) in (s['repliesByRole'] as Map).entries)
-        '$key $value',
-    ];
+  if (bot) {
     b
-      ..writeln('- inline: ${s['inline']}, review summaries: '
-          '${s['reviewSummaries']}')
       ..writeln('- with human reply: ${s['withHumanReply']}')
       ..writeln('- human replies: ${s['replies']}'
-          '${byRole.isEmpty ? '' : ' (${byRole.join(', ')})'}; '
+          '${_counts(s['repliesByRole'] as Map)}; '
           'by the PR author: ${s['authorReplies']}')
       ..writeln('- threads resolved: ${s['resolved']}');
+    if (s['rebuttals'] case int n) {
+      b
+        ..writeln('- rebuttals (one per person per PR): $n'
+            '${_counts(s['rebuttalsByRole'] as Map)}, '
+            '${s['authorRebuttals']} by PR authors; from '
+            '${s['rebuttalReplies']} listed replies; PRs: '
+            '${_prs(s['rebuttalPrs'] as List)}')
+        ..writeln('- rebuttal weight (PR authors at half weight): '
+            '${(s['rebuttalWeight'] as num).toStringAsFixed(2)}')
+        ..writeln('- other replies: ${(s['otherReplies'] as List).length} '
+            '(read them for acceptances, and the rebuttals to confirm them)');
+    } else {
+      b.writeln('- classify replies: pass the rebuttal reply ids with '
+          '--rebuttals');
+    }
   }
-  b
-    ..writeln('- PRs (${(s['prs'] as List).length}): '
-        '${[for (var n in s['prs'] as List) '#$n'].join(', ')}')
-    ..writeln('- reviewers (${(s['reviewers'] as List).length}): '
+  b.writeln('- PRs (${(s['prs'] as List).length}): ${_prs(s['prs'] as List)}');
+  if (!bot) {
+    b.writeln('- reviewers (${(s['reviewers'] as List).length}): '
         '${[
       for (var r in (s['reviewers'] as List).cast<Map>())
         '${r['login']} (${r['role']})',
     ].join(', ')}');
+  }
   var matches = (s['matches'] as List).cast<Map>();
   if (matches.isNotEmpty) {
     b
@@ -1109,10 +1269,33 @@ String renderSelect(Map<String, Object?> s) {
       ..writeln();
   }
   for (var m in matches) {
-    b.writeln(_selectLine(m));
+    b
+      ..writeln(_selectLine(m))
+      ..writeln('  - match: ${m['match']}');
+    for (var r in (m['replies'] as List? ?? const []).cast<Map>()) {
+      var who = r['isPrAuthor'] == true
+          ? '${r['author']} (${r['role']}, PR author)'
+          : '${r['author']} (${r['role']})';
+      var tag = switch (r['rebuttal']) {
+        true => ' [rebuttal]',
+        false => ' [other]',
+        _ => '',
+      };
+      var url = r['url'] == null ? '' : ' ${r['url']}';
+      b.writeln('  - ↳ [r:${r['id']}] $who$tag: ${r['text']}$url');
+    }
   }
   return b.toString();
 }
+
+/// ` (key n, key n)` for a non-empty [counts] map, else empty.
+String _counts(Map counts) => counts.isEmpty
+    ? ''
+    : ' (${[
+        for (var MapEntry(:key, :value) in counts.entries) '$key $value'
+      ].join(', ')})';
+
+String _prs(List prs) => [for (var n in prs) '#$n'].join(', ');
 
 /// One `--select` match as a markdown list item.
 String _selectLine(Map m) {

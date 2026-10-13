@@ -42,11 +42,13 @@ Modifiers and special cases:
   missing `evidence` block in `eval.json` is an error (exit 1); in `check`
   it reads as Low.
 - **Evidence from rebuttals of the bot** ("the bot is wrong" themes): the
-  evidence is bot comments a human pushed back on (`collect.dart digest --select ... --bot`
-  counts the replies by role, PR authors included). Replies aren't rebuttals
-  until you've read them. A rebuttal by the PR's author counts at **role
-  weight × 0.5** (so 0.5 for a maintainer author); other reviewers' rebuttals
-  count at their role weight.
+  evidence is bot comments a human pushed back on. Replies aren't rebuttals
+  until you've read them: `collect.dart digest --select ... --bot` lists
+  each match's replies with ids, and rerunning with `--rebuttals @<file>`
+  (the ids you classified as rebuttals) computes `rebuttalWeight` with these
+  rules: one per person per PR. A rebuttal by the PR's author
+  counts at **role weight × 0.5** (so 0.5 for a maintainer author); other
+  reviewers' rebuttals count at their role weight.
 - **Count each human comment once.** A non-author's rebuttal found with
   `--bot` is often already in the human-mode `--select` count for the same
   theme: don't add it again. At most one rebuttal counts per (person, PR,

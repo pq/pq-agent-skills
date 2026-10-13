@@ -113,18 +113,28 @@ File formats and the data layout: [references/formats.md](references/formats.md)
    covered".
 5. **Count each theme with the script; never hand-count:**
    `collect.dart digest --corpus <file> --select '<regex>' [--path '<regex>']
-   [--bot]`. It reports comments, weighted sum, distinct PRs, and reviewers with
-   roles, leaving out PR authors' own comments (shown separately). `--select`
-   and `--path` are already case-insensitive; inline flags like `(?i)` aren't
-   supported. Label
-   themes resting on one reviewer as single-reviewer. For a "the bot is
-   wrong" theme, select the bot's comments with `--bot`: it counts `inline`
-   comments and `reviewSummaries` separately, and the human `replies` in
-   those threads by role (`repliesByRole`), PR authors included
-   (`authorReplies`). Quote `inline` (not review summaries) as the bot's claim
-   count. Replies aren't rebuttals (many are "Done" or "Good catch"): the
-   evidence is the bot comments a human pushed back on, so read the replies,
-   and count and weight them as in the rubric's Evidence notes.
+   [--bot [--rebuttals @<file>]]`. It reports comments, weighted sum,
+   distinct PRs, and reviewers with roles, leaving out PR authors' own
+   comments (shown separately). `--select` and `--path` are already
+   case-insensitive; inline flags like `(?i)` aren't supported. Label themes
+   resting on one reviewer as single-reviewer. Each match shows the matched
+   span (`match`), so check that it matched for the right reason. For a "the
+   bot is wrong" theme, you classify the replies and the script counts them:
+   1. Run with `--bot`. Quote `inline` (not review summaries) as the bot's
+      claim count. Each match lists its human replies with ids
+      (`↳ [r:<id>] ...`).
+   2. Read every reply. A rebuttal pushes back on the point of this theme;
+      pushback on another point, "Done", and "Good catch" aren't.
+   3. Write the rebuttal reply ids to `rebuttals-<theme>.txt` next to the
+      report, one per line with a one-line reason after `#` (format in
+      [references/formats.md](references/formats.md)), so the
+      classification can be audited.
+   4. Rerun with `--rebuttals @rebuttals-<theme>.txt` and quote
+      `rebuttalWeight` (plus `rebuttals`, `rebuttalsByRole`, `rebuttalPrs`:
+      one per person per PR, PR authors at half weight, as in the rubric).
+      An id the script rejects is a reply on a bot comment the `--select`
+      regex doesn't match: broaden the regex if it belongs to the theme,
+      or drop the id.
 6. **Draft suggestions.** Each one has: target file, a minimal diff, type
    (`add` / `edit` / `remove` / `fix`), evidence links with paraphrases, the
    counts from step 5, and `affects`:
@@ -143,9 +153,10 @@ File formats and the data layout: [references/formats.md](references/formats.md)
      non-maintainers with < 2 weighted comments, is **Low**. Single-reviewer themes can still be
      Medium, labeled "single-reviewer".
    - For "the bot is wrong" themes, also count the bot comments of the same
-     kind that humans accepted ("Done", applied the change). If accepted ≥
-     rebutted, cap at **Low** and recommend `evaluate` (see the rubric's
-     counter-evidence note).
+     kind that humans accepted ("Done", applied the change): read them from
+     `otherReplies` in the `--rebuttals` run. If accepted ≥ rebutted, cap at
+     **Low** and recommend `evaluate` (see the rubric's counter-evidence
+     note).
 8. **Report:** write `<dataDir>/<owner>/<repo>/proposals/<today>/report.md`
    (today's date, UTC; if that directory exists, use `<today>-2`, `<today>-3`,
    ...) using [templates/proposals.md](templates/proposals.md),
