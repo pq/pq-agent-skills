@@ -4,7 +4,7 @@
 /// (`baseline` / `candidate`); every subcommand validates first and refuses
 /// to score partial or invalid results.
 ///
-/// Usage (also printed on a usage error):
+/// Usage (also printed by `--help` and on a usage error):
 ///
 ///     dart score.dart <validate|replay|noise|fidelity|rubric|all>
 ///         --run <runDir> [--config <path>] [--output-file <file.json>]
@@ -141,6 +141,23 @@ String _change(double v) => '${v > 0 ? '+' : ''}${v.toStringAsFixed(2)}';
 
 String _percent(double share) => '${(100 * share).round()}%';
 
+/// Characters of title + body shown per matched comment.
+const _matchExcerptLength = 120;
+
+/// A reviewer comment's severity, location, and the start of its title and
+/// body, for listing matches.
+Map<String, Object?> _matchJson(Map<String, Object?> k) {
+  var text = '${k['title']}: ${k['body']}'.replaceAll(RegExp(r'\s+'), ' ');
+  return {
+    'severity': k['severity'],
+    'path': k['path'],
+    if (k['line'] != null) 'line': k['line'],
+    'text': text.length <= _matchExcerptLength
+        ? text
+        : '${text.substring(0, _matchExcerptLength)}…',
+  };
+}
+
 /// A scored part of the output: JSON for `--output-file` / `score.json`,
 /// and markdown for stdout.
 typedef Part = ({Map<String, Object?> json, String markdown});
@@ -160,7 +177,8 @@ Usage:
   dart score.dart <validate|replay|noise|fidelity|rubric|all>
       --run <runDir> [--config <path>] [--output-file <file.json>]''';
 
-Future<void> main(List<String> argv) => guarded(usage, () async => score(argv));
+Future<void> main(List<String> argv) =>
+    guarded(usage, argv, () async => score(argv));
 
 void score(List<String> argv) {
   var command = argv.firstOrNull ?? '';
@@ -541,6 +559,16 @@ final class Scorer {
         for (var t in scored)
           if (t.c.want == Want.flag)
             if (_rateChange(t.arms) case var d? when d < 0) t.c.id,
+      ],
+      matches: [
+        for (var c in eval.cases)
+          for (var role in const ['baseline', 'candidate'])
+            for (var MapEntry(key: run, value: comments)
+                in (runs(model, c.id, role).entries.toList()
+                  ..sort((a, b) => a.key.compareTo(b.key))))
+              if (comments.where((k) => eval.flags(k, c.group)).toList()
+                  case var flagged when flagged.isNotEmpty)
+                (c: c, role: role, run: run, comments: flagged),
       ],
     );
   }
@@ -1050,6 +1078,18 @@ typedef ModelReplay = ({
 
   /// `want: flag` cases whose candidate correct rate is below the baseline's.
   List<String> lostFlagCases,
+
+  /// The comments that flagged the concern, per case, arm, and run (runs
+  /// that flag it only).
+  List<RunMatches> matches,
+});
+
+/// The comments of one run that flag the concern.
+typedef RunMatches = ({
+  EvalCase c,
+  String role,
+  int run,
+  List<Map<String, Object?>> comments,
 });
 
 Map<String, Object?> replayJson(ModelReplay r) => {
@@ -1084,6 +1124,15 @@ Map<String, Object?> replayJson(ModelReplay r) => {
         'rateDelta': r.rateDelta,
         'lostFlagCases': r.lostFlagCases,
       },
+      'matches': [
+        for (var m in r.matches)
+          {
+            'case': m.c.id,
+            'arm': m.role,
+            'run': m.run,
+            'comments': [for (var k in m.comments) _matchJson(k)],
+          },
+      ],
     };
 
 String renderReplay(ModelReplay r) {
@@ -1118,6 +1167,14 @@ String renderReplay(ModelReplay r) {
       '(rate delta ${_signed(r.rateDelta)})'
       '${lost.isEmpty ? '' : '; loses want=flag case(s) '
           '${lost.join(', ')} (caps Replay at Low)'}.');
+  if (r.matches.isNotEmpty) md.writeln('\nMatched comments:\n');
+  for (var m in r.matches) {
+    for (var k in m.comments.map(_matchJson)) {
+      var line = k['line'] == null ? '' : ':${k['line']}';
+      md.writeln('- ${m.c.id} ${m.role} r${m.run}: [${k['severity']}] '
+          '`${k['path']}$line` ${k['text']}');
+    }
+  }
   return md.toString();
 }
 

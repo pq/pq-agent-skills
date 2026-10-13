@@ -41,6 +41,24 @@ Modifiers and special cases:
 - **Evidence floor:** the Evidence row is at least Low. In `evaluate`, a
   missing `evidence` block in `eval.json` is an error (exit 1); in `check`
   it reads as Low.
+- **Evidence from rebuttals of the bot** ("the bot is wrong" themes): the
+  evidence is bot comments a human pushed back on (`collect.dart digest --select ... --bot`
+  counts the replies by role, PR authors included). Replies aren't rebuttals
+  until you've read them. A rebuttal by the PR's author counts at **role
+  weight × 0.5** (so 0.5 for a maintainer author); other reviewers' rebuttals
+  count at their role weight.
+- **Count each human comment once.** A non-author's rebuttal found with
+  `--bot` is often already in the human-mode `--select` count for the same
+  theme: don't add it again. At most one rebuttal counts per (person, PR,
+  reason); pasting the same pushback on 10 threads is one. Count only the
+  comments that support the proposed text: split a heterogeneous theme rather
+  than pooling its comments.
+- **Counter-evidence** ("the bot is wrong" themes): also count the bot
+  comments of the same kind that humans accepted ("Done", applied the
+  change). If accepted ≥ rebutted, the Evidence row is capped at **Low** and
+  the next step is `evaluate`. Bot comments that are verifiably wrong but got
+  no reply may be cited as context, or support a `fix` by inspection when
+  they contradict a repo fact, but are never counted as weighted evidence.
 - **Fidelity:** if baseline runs reproduce < 40% of the bot's real comments on
   the motivating PRs, `affects: bot|both` suggestions drop one level. If the
   bot's comments carry no recognizable severity or tag, fidelity is "not

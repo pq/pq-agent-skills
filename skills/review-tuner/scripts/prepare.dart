@@ -4,10 +4,10 @@
 /// reviewer or judge: the orchestrator sends each task's `message` to a fresh
 /// agent.
 ///
-/// Usage (also printed on a usage error):
+/// Usage (also printed by `--help` and on a usage error):
 ///
 ///     dart prepare.dart init --repo <owner/name|alias> --id <id> [--config <path>]
-///     dart prepare.dart check --eval <evalDir> [--out <dir>] [--seed <n>] [--config <path>]
+///     dart prepare.dart check --eval <evalDir> [--runs <n>] [--out <dir>] [--seed <n>] [--config <path>]
 ///     dart prepare.dart evaluate --eval <evalDir> [--out <dir>] [--seed <n>] [--config <path>]
 ///     dart prepare.dart judge --run <runDir> [--seed <n>]
 ///
@@ -27,7 +27,7 @@ import 'src/eval.dart';
 const usage = '''
 Usage:
   dart prepare.dart init --repo <owner/name|alias> --id <id> [--config <path>]
-  dart prepare.dart check --eval <evalDir> [--out <dir>] [--seed <n>] [--config <path>]
+  dart prepare.dart check --eval <evalDir> [--runs <n>] [--out <dir>] [--seed <n>] [--config <path>]
   dart prepare.dart evaluate --eval <evalDir> [--out <dir>] [--seed <n>] [--config <path>]
   dart prepare.dart judge --run <runDir> [--seed <n>]''';
 
@@ -50,12 +50,12 @@ final skillDir = File(Platform.script.toFilePath()).parent.parent.path;
 /// Options each subcommand accepts.
 const commandOptions = {
   'init': {'repo', 'id', 'config'},
-  'check': {'eval', 'out', 'seed', 'config'},
+  'check': {'eval', 'runs', 'out', 'seed', 'config'},
   'evaluate': {'eval', 'out', 'seed', 'config'},
   'judge': {'run', 'seed'},
 };
 
-Future<void> main(List<String> argv) => guarded(usage, () async {
+Future<void> main(List<String> argv) => guarded(usage, argv, () async {
       var command = argv.firstOrNull;
       var allowed = commandOptions[command] ??
           usageError('Unknown or missing command "${command ?? ''}".');
@@ -217,6 +217,8 @@ Future<void> prepare(Map<String, String> options,
       fail('$evalDir/eval.json: repo "${eval.repo}" is not owner/name or an '
           'alias.');
   var mode = thorough ? 'evaluate' : 'check';
+  var runs = intOption(options, 'runs') ?? 1;
+  if (runs < 1) usageError('--runs must be at least 1');
   var out = absPath(options['out'] ?? '$evalDir/$mode');
   var seed =
       intOption(options, 'seed') ?? DateTime.now().microsecondsSinceEpoch;
@@ -233,10 +235,11 @@ Future<void> prepare(Map<String, String> options,
   if (failures.isNotEmpty) {
     fail('\n${failures.length} case(s) failed; tasks.json was not written.');
   }
-  // check: one run on the primary model; evaluate: every model and run.
+  // check: --runs runs (default 1) on the primary model; evaluate: every
+  // model and run.
   var models = thorough
       ? eval.models
-      : [(tier: eval.primary.tier, runs: 1, label: eval.primary.label)];
+      : [(tier: eval.primary.tier, runs: runs, label: eval.primary.label)];
   var tasks =
       buildTasks(eval: eval, models: models, out: out, repoText: repoText);
   writePromptFiles('$out/prompts', tasks);

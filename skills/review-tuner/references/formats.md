@@ -78,10 +78,14 @@ A corpus line (`PullRequest` / `Comment` in `scripts/src/corpus.dart`;
 ## Stats (`<corpus base>.stats.json`, written by `collect.dart`)
 
 Counts are over non-automation PRs (`prsConsidered`); reviewer counts
-exclude PR authors' own comments.
+exclude PR authors' own comments. The window selects PRs by close date;
+`createdRange` is the range of creation dates of the collected PRs (`null`s
+when none were collected).
 
 ```json
-{"repo": "o/n", "window": {"since": "…", "until": "…"}, "collectedAt": "…",
+{"repo": "o/n", "window": {"since": "…", "until": "…"},
+ "createdRange": {"earliest": "YYYY-MM-DD", "latest": "YYYY-MM-DD"},
+ "collectedAt": "…",
  "prsTotal": 128, "prsCollected": 128, "prsFailed": 0,
  "prsExcludedAutomation": 18, "prsConsidered": 110, "merged": 101,
  "closedUnmerged": 9, "prsByAuthorRole": {"maintainer": 60},
@@ -124,12 +128,19 @@ and `prs`.
 
 `collect.dart digest --corpus <file> --select <regex> [--path <regex>] [--bot]
 [--output-file <x.json>]` counts comments in non-automation PRs whose full
-body matches (case-insensitive); `--path` filters by comment path (comments
-without a path never match it). Default: substantive human comments (not
+body matches (case-insensitive; inline flags like `(?i)` aren't supported);
+`--path` filters by comment path, also case-insensitively (comments without
+a path never match it). Default: substantive human comments (not
 trivial like "LGTM"; human replies in bot threads always count); `--bot`: the
 configured reviewer bot's comments only. `n`, `weighted`, `prs`, and
 `reviewers` leave out comments by the PR's own author: those are still
 listed in `matches` (with `isPrAuthor`) and counted as `prAuthorComments`.
+With `--bot` there is no `weighted`; instead `inline` and `reviewSummaries`
+count the matched bot inline comments and review summaries, and `replies`,
+`repliesByRole` (role → count), and `authorReplies` count the human replies
+in the matched threads (each once), **including** the PR author's. Quote
+`inline` as the bot's claim count, and read the replies: many are
+acknowledgments, not rebuttals.
 It never writes the digest files. A run with no matches exits 0 with
 `n: 0`; an invalid regex exits 2.
 
@@ -138,17 +149,20 @@ It never writes the digest files. A run with no matches exits 0 with
  "comments": "human|bot", "n": 2, "weighted": 2.0, "prAuthorComments": 0,
  "prs": [596, 663],
  "reviewers": [{"login": "pq", "role": "maintainer"}],
- "withHumanReply": 0, "resolved": 0,
+ "inline": 2, "reviewSummaries": 0, "withHumanReply": 0, "resolved": 0,
+ "replies": 0, "repliesByRole": {}, "authorReplies": 0,
  "matches": [{"pr": 596, "author": "pq", "role": "maintainer", "weight": 1.0,
               "isPrAuthor": true, "kind": "inline", "path": "…", "line": 1,
               "commitId": "6e97ae9…",
-              "humanReply": false, "resolved": true,
+              "humanReply": false, "authorReply": true, "resolved": true,
               "text": "160-char excerpt", "url": "…#discussion_r123"}]}
 ```
 
-`withHumanReply`, `resolved`, and the per-match `humanReply`/`resolved` appear
-only with `--bot`; `isPrAuthor`, `path`, `line`, `commitId`, and `url` only
-when known. `commitId` (also on digest comments and bot threads; the markdown
+`inline`, `reviewSummaries`, `withHumanReply`, `resolved`, `replies`,
+`repliesByRole`, `authorReplies`, and the per-match `humanReply`/`resolved`
+(plus `authorReply`, set only when the PR author replied) appear only with
+`--bot`, and `weighted` only without it; `isPrAuthor`, `path`, `line`,
+`commitId`, and `url` only when known. `commitId` (also on digest comments and bot threads; the markdown
 shows its first 10 characters as `@<sha>`) is the commit an inline comment
 was made on: use it as a case's `commit`. A
 bot comment has a human reply when a non-bot comment follows it in the same
@@ -192,7 +206,7 @@ review thread.
 |---|---|
 | `type` | `add`, `edit` (default), `remove`, or `fix` |
 | `affects` | which reviewer reads the changed file: `bot` (default; e.g. GCA), `local`, or `both` |
-| `models` | first entry is the primary; results are reported per model, never pooled. Default: one run on the agent's own model (`inherit`). `check` always uses only the first model with one run; `evaluate` uses every model and its `runs` |
+| `models` | first entry is the primary; results are reported per model, never pooled. Default: one run on the agent's own model (`inherit`). `check` always uses only the first model, with `prepare.dart check --runs N` runs per arm (default 1); `evaluate` uses every model and its `runs` |
 | `concern` | the single flag rule (below); `cite`/`objection` are case-insensitive regexes (not the starter `TODO` text), `minSeverity` one of `low`, `medium`, `high`, `critical`; `tags` are matched case-insensitively (both sides lower-cased) |
 | `pathGroups` | named groups of path substrings; `any` always matches |
 | `cases` | at least one case; each is either a real PR (`pr` + the reviewed `commit`) or synthetic (`patch`, plus an optional `commit` to apply it to), never both |
@@ -318,7 +332,10 @@ its own section). Reports and templates take their numbers from it.
    "verdict": {"verdict": "helps|no effect|hurts", "baselineCorrect": 14,
                "baselineRuns": 27, "candidateCorrect": 26,
                "candidateRuns": 27, "rateDelta": 0.44,
-               "lostFlagCases": []}}},
+               "lostFlagCases": []},
+   "matches": [{"case": "pr612", "arm": "baseline", "run": 2,
+                "comments": [{"severity": "high", "path": "…", "line": 1051,
+                              "text": "first 120 chars of title: body"}]}]}},
  "noise": {"<primary>": {
    "sets": {"<set>": {"baseline": {"all": 1.33, "nonTarget": 1.33},
                       "candidate": {"all": 0.83, "nonTarget": 0.83},
@@ -334,6 +351,9 @@ its own section). Reports and templates take their numbers from it.
             "overall": "High|Medium|Low|Reject"}}
 ```
 
+`replay.<model>.matches` lists, for every run that flags the concern, the
+comments that matched (the markdown shows them as "Matched comments"); use
+it to check that the concern regexes catch only what they should.
 `noise` is present once the judge has run; `fidelity` when `eval.json` sets
 `corpus` (`{"bot", "measurable": false}` when the bot's comments carry no
 usable severity or tag; no `models` when the bot flagged nothing).

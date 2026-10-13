@@ -2,7 +2,7 @@
 /// into a corpus (with a `.stats.json` review-density summary and a digest),
 /// and digests a corpus or counts the comments matching a theme (`--select`).
 ///
-/// Usage (also printed on a usage error):
+/// Usage (also printed by `--help` and on a usage error):
 ///
 ///     dart collect.dart --repo <owner/name|alias>
 ///         [--since YYYY-MM-DD --until YYYY-MM-DD | --days N]
@@ -68,7 +68,7 @@ const _progressInterval = 10;
 /// candidate for the config's `people` or `roles`.
 const _frequentParticipant = (authored: 2, comments: 5);
 
-Future<void> main(List<String> argv) => guarded(usage, () async {
+Future<void> main(List<String> argv) => guarded(usage, argv, () async {
       var command = 'collect';
       var rest = argv;
       if (argv.firstOrNull case var first? when !first.startsWith('--')) {
@@ -455,8 +455,13 @@ Future<void> runCollect(Map<String, String> options) async {
     'humanCommentsWeighted': digest['humanCommentsWeighted'],
   };
   writeJson(statsPath, stats);
+  var bot = stats['bot'] as Map;
   stdout
     ..write(renderStats(stats))
+    ..writeln()
+    ..writeln('Summary: ${stats['prsConsidered']} PRs considered, '
+        '${stats['humanCommentsTotal']} human comments, '
+        '${bot['botInlineComments']} bot inline comments.')
     ..writeln()
     ..writeln('Wrote:')
     ..writeln('- $output')
@@ -513,9 +518,17 @@ Map<String, Object?> computeStats(
   ({String since, String until}) window,
 ) {
   var considered = prs.where((p) => p.considered).toList();
+  var created = [
+    for (var p in prs)
+      if (p.createdAt case var c? when c.length >= 10) c.substring(0, 10),
+  ]..sort();
   return {
     'repo': repo.slug,
     'window': {'since': window.since, 'until': window.until},
+    'createdRange': {
+      'earliest': created.firstOrNull,
+      'latest': created.lastOrNull,
+    },
     'collectedAt': DateTime.now().toUtc().toIso8601String(),
     'prsTotal': prs.length + failures.length,
     'prsCollected': prs.length,
@@ -644,7 +657,13 @@ String renderStats(Map<String, Object?> s) {
     ..writeln()
     ..writeln(
         'Window: PRs closed ${window['since']} → ${window['until']} (UTC)')
-    ..writeln()
+    ..writeln();
+  if (s['createdRange'] case {'earliest': var from?, 'latest': var to?}) {
+    b
+      ..writeln('Created: $from → $to (UTC)')
+      ..writeln();
+  }
+  b
     ..writeln('| Metric | Value |')
     ..writeln('|---|---|');
   for (var key in _summaryKeys) {
@@ -966,11 +985,15 @@ void _redigest(List<PullRequest> corpus, RepoConfig repo, String corpusPath,
 /// path matches [path], if given): substantive human comments (plus every
 /// human reply in a [bot] thread), or with [botComments] those by the
 /// reviewer [bot] (other bots, such as CLA or merge bots, are skipped).
-/// Counts leave out comments by the PR's own author.
+/// Counts leave out comments by the PR's own author; with [botComments],
+/// human replies in the matched threads are counted by role, PR authors
+/// included.
 Map<String, Object?> selectComments(
     List<PullRequest> corpus, RegExp text, RegExp? path,
     {required String bot, required bool botComments}) {
   var matches = <Map<String, Object?>>[];
+  // With [botComments]: human replies in the matched threads, once each.
+  var replies = <(int, int), Comment>{};
   for (var pr in corpus.where((p) => p.considered)) {
     var botRoots = {for (var r in pr.botThreadRoots(bot)) r.id};
     bool wanted(Comment c) => botComments
@@ -980,7 +1003,16 @@ Map<String, Object?> selectComments(
       if (!text.hasMatch(c.body)) continue;
       if (path != null && !path.hasMatch(c.path ?? '')) continue;
       matches.add(_selectMatch(pr, c, withThread: botComments));
+      if (botComments) {
+        for (var r in pr.humanReplies(c)) {
+          replies[(pr.number, r.id)] = r;
+        }
+      }
     }
+  }
+  var repliesByRole = <String, int>{};
+  for (var r in replies.values) {
+    repliesByRole[r.role] = (repliesByRole[r.role] ?? 0) + 1;
   }
   var counted = matches.where((m) => m['isPrAuthor'] != true).toList();
   var reviewers = <String, String>{
@@ -991,8 +1023,9 @@ Map<String, Object?> selectComments(
     if (path != null) 'path': path.pattern,
     'comments': botComments ? 'bot' : 'human',
     'n': counted.length,
-    'weighted': counted.fold<double>(
-        0, (sum, m) => sum + (m['weight'] as num? ?? 0).toDouble()),
+    if (!botComments)
+      'weighted': counted.fold<double>(
+          0, (sum, m) => sum + (m['weight'] as num? ?? 0).toDouble()),
     'prAuthorComments': matches.length - counted.length,
     'prs': {for (var m in counted) m['pr']}.toList(),
     'reviewers': [
@@ -1000,8 +1033,13 @@ Map<String, Object?> selectComments(
         {'login': key, 'role': value},
     ],
     if (botComments) ...{
+      'inline': matches.where((m) => m['kind'] == 'inline').length,
+      'reviewSummaries': matches.where((m) => m['kind'] == 'review').length,
       'withHumanReply': matches.where((m) => m['humanReply'] == true).length,
       'resolved': matches.where((m) => m['resolved'] == true).length,
+      'replies': replies.length,
+      'repliesByRole': repliesByRole,
+      'authorReplies': replies.values.where((r) => r.isPrAuthor).length,
     },
     'matches': matches,
   };
@@ -1021,6 +1059,7 @@ Map<String, Object?> _selectMatch(PullRequest pr, Comment c,
       if (c.commitId != null) 'commitId': c.commitId,
       if (withThread) ...{
         'humanReply': pr.humanReplies(c).isNotEmpty,
+        if (pr.humanReplies(c).any((r) => r.isPrAuthor)) 'authorReply': true,
         'resolved': c.resolved == true,
       },
       'text': excerpt(c.body, _selectExcerptLength),
@@ -1033,14 +1072,25 @@ String renderSelect(Map<String, Object?> s) {
         '${s['path'] == null ? '' : ' path /${s['path']}/'} '
         '(${s['comments']} comments)')
     ..writeln()
-    ..writeln('- comments: ${s['n']}')
-    ..writeln('- weighted: ${(s['weighted'] as num).toStringAsFixed(1)}');
+    ..writeln('- comments: ${s['n']}');
+  if (s['weighted'] case num weighted) {
+    b.writeln('- weighted: ${weighted.toStringAsFixed(1)}');
+  }
   if (s['prAuthorComments'] case int n when n > 0) {
     b.writeln('- by the PR author (listed, not counted): $n');
   }
   if (s['comments'] == 'bot') {
+    var byRole = [
+      for (var MapEntry(:key, :value) in (s['repliesByRole'] as Map).entries)
+        '$key $value',
+    ];
     b
+      ..writeln('- inline: ${s['inline']}, review summaries: '
+          '${s['reviewSummaries']}')
       ..writeln('- with human reply: ${s['withHumanReply']}')
+      ..writeln('- human replies: ${s['replies']}'
+          '${byRole.isEmpty ? '' : ' (${byRole.join(', ')})'}; '
+          'by the PR author: ${s['authorReplies']}')
       ..writeln('- threads resolved: ${s['resolved']}');
   }
   b
@@ -1072,7 +1122,8 @@ String _selectLine(Map m) {
   var state = m['humanReply'] == null
       ? ''
       : ' [${m['resolved'] == true ? 'resolved' : 'unresolved'}'
-          '${m['humanReply'] == true ? ', human reply' : ''}]';
+          '${m['humanReply'] == true ? ', human reply' : ''}'
+          '${m['authorReply'] == true ? ' (incl. PR author)' : ''}]';
   var url = m['url'] == null ? '' : ' ${m['url']}';
   return '- #${m['pr']} $author ${_where(m)}$state: ${m['text']}$url';
 }

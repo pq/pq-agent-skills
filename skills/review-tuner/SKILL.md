@@ -69,9 +69,10 @@ File formats and the data layout: [references/formats.md](references/formats.md)
 ## Mode: propose (no replays)
 
 1. **Collect:** `collect.dart --repo <repo> [--days N | --since YYYY-MM-DD
-   --until YYYY-MM-DD]` (default: the last 90 days). It writes the corpus,
-   stats, and digest under `<dataDir>/<owner>/<repo>/corpus/`. Read the
-   summary. If fewer than 20 PRs have substantive human comments, or there are
+   --until YYYY-MM-DD]` (default: the last 90 days). The window filters PRs
+   by **close** date; the stats' `createdRange` shows when they were opened.
+   It writes the corpus, stats, and digest under
+   `<dataDir>/<owner>/<repo>/corpus/`. Read the summary. If fewer than 20 PRs have substantive human comments, or there are
    fewer than 50 human comments, say so and suggest a longer window before
    continuing.
 2. **Digest:** read `corpus/<since>_<until>.digest.md`. It's your main input;
@@ -91,11 +92,20 @@ File formats and the data layout: [references/formats.md](references/formats.md)
    - **Look for:** contradictions between files; classes, paths, or commands
      named in guidance that don't exist (check against the recursive tree, or
      with `gh api "search/code?q=<symbol>+repo:<repo>"`); rules the bot reads
-     that differ from what local agents read.
+     that differ from what local agents read. An empty code search is
+     inconclusive (it misses many symbols): confirm absence in the recursive
+     tree listing or with the contents API before calling something
+     nonexistent.
+   - **Links:** resolve relative links from the linking file's own directory
+     and flag broken ones (`[STYLE.md](STYLE.md)` inside `.gemini/` points at
+     `.gemini/STYLE.md`). The review bot most likely reads only the text of its
+     guidance files and doesn't follow links, so rules that live only in linked
+     files (`AGENTS.md`, `STYLE.md`, skills) are invisible to it: flag
+     important rules that the bot's files only link to.
 4. **Find themes in the digest:**
    - the same correction made by humans on 2+ PRs (a missing rule);
    - bot comments that humans dismissed, argued with, or resolved without
-     change (a wrong or over-broad rule);
+     change (a wrong or over-broad rule); a PR author's rebuttal counts too;
    - issues humans caught that the bot missed (a missing rule the bot reads).
    Themes about PR descriptions or process (testing notes, screenshots,
    changelog wording) can't be replayed. Check whether the PR template or
@@ -104,8 +114,17 @@ File formats and the data layout: [references/formats.md](references/formats.md)
 5. **Count each theme with the script; never hand-count:**
    `collect.dart digest --corpus <file> --select '<regex>' [--path '<regex>']
    [--bot]`. It reports comments, weighted sum, distinct PRs, and reviewers with
-   roles, leaving out PR authors' own comments (shown separately). Label
-   themes resting on one reviewer as single-reviewer.
+   roles, leaving out PR authors' own comments (shown separately). `--select`
+   and `--path` are already case-insensitive; inline flags like `(?i)` aren't
+   supported. Label
+   themes resting on one reviewer as single-reviewer. For a "the bot is
+   wrong" theme, select the bot's comments with `--bot`: it counts `inline`
+   comments and `reviewSummaries` separately, and the human `replies` in
+   those threads by role (`repliesByRole`), PR authors included
+   (`authorReplies`). Quote `inline` (not review summaries) as the bot's claim
+   count. Replies aren't rebuttals (many are "Done" or "Good catch"): the
+   evidence is the bot comments a human pushed back on, so read the replies,
+   and count and weight them as in the rubric's Evidence notes.
 6. **Draft suggestions.** Each one has: target file, a minimal diff, type
    (`add` / `edit` / `remove` / `fix`), evidence links with paraphrases, the
    counts from step 5, and `affects`:
@@ -117,13 +136,19 @@ File formats and the data layout: [references/formats.md](references/formats.md)
    - A `fix` backed by a deterministic check (two files disagree, a referenced
      symbol doesn't exist) is **High (by inspection)**, however many reviewers
      raised it.
-   - Otherwise use the Evidence row of [references/rubric.md](references/rubric.md),
-     capped at **Medium**: Medium needs ≥2 weighted comments, or one
+   - Otherwise use the Evidence row of [references/rubric.md](references/rubric.md)
+     (for "the bot is wrong" themes, rebuttals weighted as in its Evidence
+     notes), capped at **Medium**: Medium needs ≥2 weighted comments, or one
      maintainer comment of a clearly general nature; one comment, or
      non-maintainers with < 2 weighted comments, is **Low**. Single-reviewer themes can still be
      Medium, labeled "single-reviewer".
+   - For "the bot is wrong" themes, also count the bot comments of the same
+     kind that humans accepted ("Done", applied the change). If accepted ≥
+     rebutted, cap at **Low** and recommend `evaluate` (see the rubric's
+     counter-evidence note).
 8. **Report:** write `<dataDir>/<owner>/<repo>/proposals/<today>/report.md`
-   (today's date, UTC) using [templates/proposals.md](templates/proposals.md),
+   (today's date, UTC; if that directory exists, use `<today>-2`, `<today>-3`,
+   ...) using [templates/proposals.md](templates/proposals.md),
    save any helper files next to it, and present it. Corpus numbers come from
    the stats and digest headers. Offer next steps per suggestion: `check` it,
    `evaluate` it, or open a draft PR in the fork (see "Draft PR").
@@ -146,13 +171,17 @@ It doesn't give a confidence level.
      Give each `set`, `want` (`flag` or `no-flag`), and `group` (`any` or a
      `pathGroups` key) if path groups matter.
    - `models`: leave the default (one run on your own model) unless asked.
-     `check` always runs once on the first model only.
-3. `prepare.dart check --eval <evalDir>` writes `check/tasks.json`.
+     `check` always uses the first model only, one run per arm unless
+     `--runs` says otherwise.
+3. `prepare.dart check --eval <evalDir> [--runs N]` writes `check/tasks.json`
+   (N runs per arm on the primary model; default 1).
 4. **Dispatch the tasks** (see below).
 5. `score.dart validate --run <evalDir>/check`. Rerun any listed task. Then
    `score.dart replay --run <evalDir>/check` and report the verdict with the
    per-case table and sample sizes. (Every `score` subcommand validates first
-   and refuses to score partial results.)
+   and refuses to score partial results.) Before reporting a verdict, read the
+   matched comments; if a match isn't really about the concern, tighten the
+   concern regexes and re-score (no new runs needed).
 
 ## Mode: evaluate (thorough)
 
@@ -179,7 +208,9 @@ Use for a suggestion headed for a PR that people will rely on. Same steps as
    findings only, since noise is scored on it), dispatch the judge tasks the
    same way, then `score.dart validate` (it also checks the judge outputs;
    rerun any listed judge task) and `score.dart all --run <evalDir>/evaluate`.
-   `all` fails without judge results on the negatives.
+   `all` fails without judge results on the negatives. Before reporting a
+   verdict, read the matched comments; if a match isn't really about the
+   concern, tighten the concern regexes and re-score (no new runs needed).
 5. Write `evaluate/report.md` from
    [templates/suggestion-report.md](templates/suggestion-report.md). Start with
    the reviewer-facing **Summary** (the issue; replay results and confidence in

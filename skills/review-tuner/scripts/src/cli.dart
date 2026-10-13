@@ -22,13 +22,27 @@ const _transient = ['rate limit', 'http 5', 'timeout', 'something went wrong'];
 /// The running script's usage text, printed with every usage error.
 String _usage = '';
 
+/// Thrown by [parseArgs] when `--help` or `-h` is given.
+final class _HelpRequested implements Exception {
+  const _HelpRequested();
+}
+
+bool _isHelp(String arg) => arg == '--help' || arg == '-h';
+
 /// Runs a script's [body] with [usage] as its usage text, turning any
 /// unexpected exception into a one-line error and [exitFailure] (instead of
-/// a stack trace and exit 255).
-Future<void> guarded(String usage, Future<void> Function() body) async {
+/// a stack trace and exit 255). `--help` or `-h` as the first of [argv], or
+/// anywhere [parseArgs] sees it, prints [usage] to stdout and exits 0.
+Future<void> guarded(
+    String usage, List<String> argv, Future<void> Function() body) async {
   _usage = usage;
   try {
+    if (argv.firstOrNull case var first? when _isHelp(first)) {
+      throw const _HelpRequested();
+    }
     await body();
+  } on _HelpRequested {
+    stdout.writeln(usage);
   } catch (e) {
     fail('Error: $e');
   }
@@ -52,7 +66,8 @@ Never fail(String message) {
 
 /// Parses `--name value` options (names in [options]) and `--flag` booleans
 /// (names in [flags]); any other `--name` is a usage error. Anything not
-/// starting with `--` is positional.
+/// starting with `--` is positional. `--help` or `-h` (not as an option's
+/// value) prints the usage text and exits 0 (see [guarded]).
 ({Map<String, String> options, List<String> positional}) parseArgs(
   List<String> argv, {
   required Set<String> options,
@@ -62,6 +77,7 @@ Never fail(String message) {
   var positional = <String>[];
   for (var i = 0; i < argv.length; i++) {
     var arg = argv[i];
+    if (_isHelp(arg)) throw const _HelpRequested();
     if (!arg.startsWith('--')) {
       positional.add(arg);
       continue;
