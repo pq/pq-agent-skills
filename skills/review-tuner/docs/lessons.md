@@ -47,6 +47,18 @@ that flags everything scores 100%.
 One negative PR alone swung noise by ±0.5 per run in P0-1.
 → The noise Reject cut-off sits at +1.0 (D38).
 
+**A passing check doesn't show where a rule stops; maintainer review does.**
+A shared-helpers rule passed its quick check (helpers suggested 2/4 → 4/4, no
+false flags) and was approved upstream with two edits. "Use `NotifierSwitch`
+instead of a raw `Switch`" was narrowed to a `Switch` inside a
+`ValueListenableBuilder`, which is exactly what the helper wraps; the draft had
+dropped that context from the review comments. "Theme sizes such as
+`smallFontSize`" was widened to `theme.dart`'s constants and shared text
+styles. The evidence named one member and the maintainer named the family. The
+check's negatives were unrelated PRs, so the over-broad bullet was never tested.
+→ Draft from definitions, offer families, and include a near-miss negative
+(D59). Maintainer edits on upstream PRs are calibration data; record them here.
+
 ## Evidence from review history
 
 **Most pushback against the bot comes from PR authors.**
