@@ -34,11 +34,13 @@ All scripts print markdown and exit `0` (ok), `1` (a step failed or input
 data is invalid: report it, never treat it as "no results"), or `2` (bad
 arguments). `collect.dart` and `score.dart` also write JSON with
 `--output-file`; `prepare.dart` writes `tasks.json` into the run directory. They need `gh` (authenticated) and `git`; run them with
-network access.
+network access. An "API rate limit exceeded ... Authenticated requests" error
+means `gh` has no token in that shell (sandboxed shells often can't read it):
+rerun outside the sandbox rather than waiting.
 
 | Script | Subcommands |
 |---|---|
-| `collect.dart` | (default) collect a PR corpus and its digest; `digest` re-digest a corpus or count a theme (`--select`) |
+| `collect.dart` | (default) collect a PR corpus and its digest; `digest` re-digest a corpus or count a theme (`--select`); `guidance` list a repo's agent files and broken links from a shallow clone |
 | `prepare.dart` | `init` an eval; `check` / `evaluate` write reviewer tasks; `judge` writes judge tasks |
 | `score.dart` | `validate`, `replay`, `noise`, `fidelity`, `rubric`, `all` |
 
@@ -79,29 +81,30 @@ File formats and the data layout: [references/formats.md](references/formats.md)
    don't read the raw corpus. (`collect.dart digest --corpus <file>` regenerates
    it; `--max-chars N` gives longer excerpts.)
 3. **Audit the guidance itself** (cheap, deterministic):
-   - **Find the agent files:** `gh api "repos/<repo>/git/trees/HEAD?recursive=1"
-     --jq '.tree[].path'`, filtered for the
+   - **Find the agent files:** `collect.dart guidance --repo <repo>`. It makes
+     or updates a shallow clone of the default branch at
+     `<dataDir>/<owner>/<repo>/head/` and lists the
      [agent files](references/formats.md#agent-files) (the same list
-     `evaluate` strips from checkouts). Also note
-     `.github/PULL_REQUEST_TEMPLATE.md` and `CONTRIBUTING.md`.
+     `evaluate` strips from checkouts), the harness guidance files (present
+     or missing), `.github/PULL_REQUEST_TEMPLATE.md` and `CONTRIBUTING.md`,
+     and broken relative links.
    - **Read** the repo's harness guidance files (config `harness.guidance`;
      default `.gemini/styleguide.md` and `.gemini/config.yaml`), top-level agent
      files, and any skill that reviews code. Skim other skills only when a theme
-     points at them. Fetch raw text with
-     `gh api repos/<repo>/contents/<path> -H "Accept: application/vnd.github.raw"`.
+     points at them. Read them from the `head/` clone, not one `gh api`
+     call per file.
    - **Look for:** contradictions between files; classes, paths, or commands
-     named in guidance that don't exist (check against the recursive tree, or
-     with `gh api "search/code?q=<symbol>+repo:<repo>"`); rules the bot reads
+     named in guidance that don't exist (search the `head/` clone, or
+     use `gh api "search/code?q=<symbol>+repo:<repo>"`); rules the bot reads
      that differ from what local agents read. An empty code search is
-     inconclusive (it misses many symbols): confirm absence in the recursive
-     tree listing or with the contents API before calling something
-     nonexistent.
-   - **Links:** resolve relative links from the linking file's own directory
-     and flag broken ones (`[STYLE.md](STYLE.md)` inside `.gemini/` points at
-     `.gemini/STYLE.md`). The review bot most likely reads only the text of its
-     guidance files and doesn't follow links, so rules that live only in linked
-     files (`AGENTS.md`, `STYLE.md`, skills) are invisible to it: flag
-     important rules that the bot's files only link to.
+     inconclusive (it misses many symbols): confirm absence in the `head/`
+     clone before calling something nonexistent.
+   - **Links:** `guidance` resolves relative links from the linking file's own
+     directory and lists broken ones (`[STYLE.md](STYLE.md)` inside `.gemini/`
+     points at `.gemini/STYLE.md`). The review bot most likely reads only the
+     text of its guidance files and doesn't follow links, so rules that live
+     only in linked files (`AGENTS.md`, `STYLE.md`, skills) are invisible to
+     it: flag important rules that the bot's files only link to.
 4. **Find themes in the digest:**
    - the same correction made by humans on 2+ PRs (a missing rule);
    - bot comments that humans dismissed, argued with, or resolved without

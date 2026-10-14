@@ -1,6 +1,7 @@
 /// Collects pull request review activity for a repository over a date window
 /// into a corpus (with a `.stats.json` review-density summary and a digest),
-/// and digests a corpus or counts the comments matching a theme (`--select`).
+/// digests a corpus or counts the comments matching a theme (`--select`), and
+/// reports a repo's agent guidance from a shallow clone (`guidance`).
 ///
 /// Usage (also printed by `--help` and on a usage error):
 ///
@@ -14,6 +15,8 @@
 ///     dart collect.dart digest --corpus <corpus.jsonl> --select <regex>
 ///         [--path <regex>] [--bot [--rebuttals <ids|@file>]]
 ///         [--output-file <select.json>] [--repo <owner/name>] [--config <path>]
+///     dart collect.dart guidance --repo <owner/name|alias>
+///         [--output-file <guidance.json>] [--config <path>]
 ///
 /// Outputs, counting rules, and exit codes: `references/formats.md`.
 library;
@@ -24,6 +27,7 @@ import 'dart:io';
 import 'src/cli.dart';
 import 'src/config.dart';
 import 'src/corpus.dart';
+import 'src/guidance.dart';
 
 const usage = '''
 Usage:
@@ -36,7 +40,9 @@ Usage:
       [--config <path>]
   dart collect.dart digest --corpus <corpus.jsonl> --select <regex>
       [--path <regex>] [--bot [--rebuttals <ids|@file>]]
-      [--output-file <select.json>] [--repo <owner/name>] [--config <path>]''';
+      [--output-file <select.json>] [--repo <owner/name>] [--config <path>]
+  dart collect.dart guidance --repo <owner/name|alias>
+      [--output-file <guidance.json>] [--config <path>]''';
 
 /// GitHub search returns at most this many results per query.
 const _searchCap = 1000;
@@ -115,6 +121,11 @@ Future<void> main(List<String> argv) => guarded(usage, argv, () async {
           });
           if (args.positional.isNotEmpty) usageError('Unexpected arguments.');
           runDigest(args.options);
+        case 'guidance':
+          var args =
+              parseArgs(rest, options: {'repo', 'output-file', 'config'});
+          if (args.positional.isNotEmpty) usageError('Unexpected arguments.');
+          await runGuidance(args.options);
         default:
           usageError('Unknown command "$command".');
       }
@@ -440,6 +451,21 @@ Future<void> pooled<T>(
 RepoConfig _repoOption(Config config, String slug) =>
     config.repo(slug) ??
     usageError('Unknown repo "$slug": use owner/name or an alias.');
+
+Future<void> runGuidance(Map<String, String> options) async {
+  var slug = options['repo'] ?? usageError('Missing --repo <owner/name>.');
+  var config = loadConfig(path: options['config']);
+  var repo = _repoOption(config, slug);
+  String head;
+  try {
+    head = await updateHead(config, repo);
+  } on CommandException catch (e) {
+    fail('Failed to clone or update ${repo.slug}: $e');
+  }
+  var report = guidanceReport(repo, head);
+  if (options['output-file'] case var path?) writeJson(path, report);
+  stdout.write(renderGuidance(report));
+}
 
 Future<void> runCollect(Map<String, String> options) async {
   var slug = options['repo'] ?? usageError('Missing --repo <owner/name>.');

@@ -108,7 +108,18 @@ relative to the wrong directory, and most rules lived behind those links.
 **Sequential content fetches can hang; code search lies by omission.**
 One audit spent ~40 minutes on sequential fetches, and code search reported
 existing symbols as missing.
-→ Empty code search is inconclusive (D51); shallow clone is roadmap work.
+→ Empty code search is inconclusive (D51); the audit reads a shallow clone
+(D54). The likely cause of the hang is the next entry.
+
+**Slow runs were retries of a rate limit that couldn't clear.**
+In a sandboxed shell `gh` had no valid token, so requests went out
+unauthenticated from a shared IP and got "API rate limit exceeded" (HTTP 403).
+`gh()` treated any "rate limit" as transient and retried 4 times (5 + 20 + 45 +
+80 s), so every call took ~150 s and then failed: a 6-PR collection that takes
+~3 s outside the sandbox spent 2.5 minutes on the listing query alone, and
+sequential per-file fetches add up to tens of minutes.
+→ D53: the primary rate limit fails at once, with a hint to check
+`gh auth status`; SKILL.md says to rerun outside the sandbox.
 
 **A judge without the style guide calls guide-mandated nits noise.**
 In P0-1 the judge rated style-guide-mandated nits as noise, in both arms alike.

@@ -52,8 +52,6 @@ calibration loop (below) would answer this from outcomes.
 | Default automation-account patterns (`-autoroll`, `roller`, `bot$`) and a warning for accounts with many PRs but no human-like comments | Unconfigured repos count roller PRs as maintainer PRs | 160 roller PRs in one repo |
 | A separate agent-account list | Marking agent accounts as bots drops human reviews of their PRs | one repo |
 | Digest views (`bot-replies`, `human-inline`, threads with pushback) and a size budget | Digests of 130–577 KB take several reads | all three exploration repos |
-| Shallow clone (or tarball) with timeouts for the audit | Sequential content fetches hung ~40 minutes | one repo |
-| Find out why some collections are slow | Same run; cause not yet isolated | one repo |
 | A ready-to-run dispatch list from `prepare.dart` (`message`, `tier` pairs) | Scripted orchestrators couldn't parse `tasks.json` from a file read | exploration check runs |
 
 ## Future work
