@@ -3,14 +3,16 @@ import 'dart:io';
 
 void main(List<String> args) async {
   if (args.isEmpty) {
-    print('Usage: dart run audit_conversation.dart <app_data_dir> [convo_id1 convo_id2 ...] [--last N] [--prompts all|first|none]');
+    print(
+        'Usage: dart run audit_conversation.dart <app_data_dir> [convo_id1 convo_id2 ...] [--last N] [--prompts all|first|none]');
     exit(1);
   }
 
   var appDataDir = args[0];
   var targetConvos = <String>[];
-  var extractPrompts = 'first'; // default to first prompt only to keep output manageable
-  
+  var extractPrompts =
+      'first'; // default to first prompt only to keep output manageable
+
   for (var i = 1; i < args.length; i++) {
     if (args[i] == '--last' && i + 1 < args.length) {
       var n = int.tryParse(args[i + 1]) ?? 1;
@@ -29,7 +31,7 @@ void main(List<String> args) async {
   }
 
   targetConvos = targetConvos.toSet().toList();
-  
+
   if (targetConvos.isEmpty) {
     print('No conversations found to audit.');
     return;
@@ -40,7 +42,7 @@ void main(List<String> args) async {
   var largeSteps = <Map<String, dynamic>>[];
   var sequenceTracker = <String, Map<String, dynamic>>{};
   var userPrompts = <String, List<String>>{};
-  
+
   var stats = {
     'totalSteps': 0,
     'totalToolCalls': 0,
@@ -49,11 +51,11 @@ void main(List<String> args) async {
 
   for (var convoId in targetConvos) {
     await auditSingleTranscript(
-      appDataDir, 
-      convoId, 
-      toolCounts, 
-      commandTracker, 
-      largeSteps, 
+      appDataDir,
+      convoId,
+      toolCounts,
+      commandTracker,
+      largeSteps,
       sequenceTracker,
       userPrompts,
       extractPrompts,
@@ -61,7 +63,8 @@ void main(List<String> args) async {
     );
   }
 
-  print('--- Aggregated Audit Report for ${targetConvos.length} Conversation(s) ---');
+  print(
+      '--- Aggregated Audit Report for ${targetConvos.length} Conversation(s) ---');
   print('Conversations analyzed: ${targetConvos.join(', ')}');
   print('');
   print('📊 Audit Metadata Summary:');
@@ -69,7 +72,7 @@ void main(List<String> args) async {
   print('  - Total Tool Calls analyzed: ${stats['totalToolCalls']}');
   print('  - Total User Prompts extracted: ${stats['totalPromptsExtracted']}');
   print('  - Prompt Extraction Mode: $extractPrompts');
-  
+
   print('\n1. Tool Usage Frequencies:');
   var sortedTools = toolCounts.entries.toList()
     ..sort((a, b) => b.value.compareTo(a.value));
@@ -77,9 +80,11 @@ void main(List<String> args) async {
     print('  - ${entry.key}: ${entry.value}');
   }
 
-  print('\n2. Repeated Tool Sequences (3+ consecutive calls, potential for bulk operations or new MCP):');
+  print(
+      '\n2. Repeated Tool Sequences (3+ consecutive calls, potential for bulk operations or new MCP):');
   var sortedSeqs = sequenceTracker.entries.toList()
-    ..sort((a, b) => (b.value['instances'] as int).compareTo(a.value['instances'] as int));
+    ..sort((a, b) =>
+        (b.value['instances'] as int).compareTo(a.value['instances'] as int));
   for (var entry in sortedSeqs) {
     var instances = entry.value['instances'];
     var convoCount = (entry.value['convos'] as Set<String>).length;
@@ -88,7 +93,8 @@ void main(List<String> args) async {
 
   print('\n3. Shell Commands Executed (Potential for scripting):');
   var sortedCmds = commandTracker.entries.toList()
-    ..sort((a, b) => (b.value['total'] as int).compareTo(a.value['total'] as int));
+    ..sort(
+        (a, b) => (b.value['total'] as int).compareTo(a.value['total'] as int));
   for (var entry in sortedCmds.take(15)) {
     var total = entry.value['total'];
     var convoCount = (entry.value['convos'] as Set<String>).length;
@@ -98,13 +104,15 @@ void main(List<String> args) async {
     if (cmdDisplay.length > 80) {
       cmdDisplay = '${cmdDisplay.substring(0, 77)}...';
     }
-    print('  - [${total}x] $cmdDisplay (across $convoCount convo(s), $repoCount repo(s))');
+    print(
+        '  - [${total}x] $cmdDisplay (across $convoCount convo(s), $repoCount repo(s))');
   }
 
   print('\n4. Largest Context Hogs (Content > 10,000 chars):');
   largeSteps.sort((a, b) => (b['length'] as int).compareTo(a['length'] as int));
   for (var ls in largeSteps.take(5)) {
-    print('  - Step ${ls['step']} in convo ${ls['convo']} (${ls['type']} from ${ls['source']}): ${ls['length']} characters');
+    print(
+        '  - Step ${ls['step']} in convo ${ls['convo']} (${ls['type']} from ${ls['source']}): ${ls['length']} characters');
   }
 
   if (extractPrompts != 'none' && userPrompts.isNotEmpty) {
@@ -131,7 +139,8 @@ List<String> getLastNConversations(String appDataDir, int n) {
   var convos = <Map<String, dynamic>>[];
   for (var entity in brainDir.listSync()) {
     if (entity is Directory) {
-      var transcript = File('${entity.path}/.system_generated/logs/transcript.jsonl');
+      var transcript =
+          File('${entity.path}/.system_generated/logs/transcript.jsonl');
       if (transcript.existsSync()) {
         var id = entity.uri.pathSegments.lastWhere((e) => e.isNotEmpty);
         convos.add({
@@ -141,13 +150,14 @@ List<String> getLastNConversations(String appDataDir, int n) {
       }
     }
   }
-  
-  convos.sort((a, b) => (b['modified'] as DateTime).compareTo(a['modified'] as DateTime));
+
+  convos.sort((a, b) =>
+      (b['modified'] as DateTime).compareTo(a['modified'] as DateTime));
   return convos.take(n).map((e) => e['id'] as String).toList();
 }
 
 Future<void> auditSingleTranscript(
-  String appDataDir, 
+  String appDataDir,
   String convoId,
   Map<String, int> toolCounts,
   Map<String, Map<String, dynamic>> commandTracker,
@@ -157,7 +167,8 @@ Future<void> auditSingleTranscript(
   String extractPrompts,
   Map<String, int> stats,
 ) async {
-  var transcriptPath = '$appDataDir/brain/$convoId/.system_generated/logs/transcript.jsonl';
+  var transcriptPath =
+      '$appDataDir/brain/$convoId/.system_generated/logs/transcript.jsonl';
   var file = File(transcriptPath);
   if (!file.existsSync()) return;
 
@@ -165,14 +176,13 @@ Future<void> auditSingleTranscript(
   int sequenceCount = 0;
   bool hasExtractedFirstPrompt = false;
 
-  var linesStream = file.openRead()
-      .transform(utf8.decoder)
-      .transform(const LineSplitter());
+  var linesStream =
+      file.openRead().transform(utf8.decoder).transform(const LineSplitter());
 
   await for (var line in linesStream) {
     if (line.trim().isEmpty) continue;
     stats['totalSteps'] = (stats['totalSteps'] ?? 0) + 1;
-    
+
     Map<String, dynamic> step;
     try {
       step = jsonDecode(line) as Map<String, dynamic>;
@@ -186,12 +196,15 @@ Future<void> auditSingleTranscript(
     var contentLength = content.length;
 
     // Extract User Prompts
-    if (type == 'USER_INPUT' && (extractPrompts == 'all' || (extractPrompts == 'first' && !hasExtractedFirstPrompt))) {
+    if (type == 'USER_INPUT' &&
+        (extractPrompts == 'all' ||
+            (extractPrompts == 'first' && !hasExtractedFirstPrompt))) {
       var text = content.trim();
       if (text.isNotEmpty) {
         userPrompts.putIfAbsent(convoId, () => []).add(text);
         hasExtractedFirstPrompt = true;
-        stats['totalPromptsExtracted'] = (stats['totalPromptsExtracted'] ?? 0) + 1;
+        stats['totalPromptsExtracted'] =
+            (stats['totalPromptsExtracted'] ?? 0) + 1;
       }
     }
 
@@ -210,12 +223,12 @@ Future<void> auditSingleTranscript(
       for (var tc in toolCalls) {
         if (tc is! Map) continue;
         stats['totalToolCalls'] = (stats['totalToolCalls'] ?? 0) + 1;
-        
+
         dynamic toolNameRaw = tc['name'];
         if (toolNameRaw == null && tc['function'] is Map) {
           toolNameRaw = tc['function']['name'];
         }
-        
+
         String toolName;
         if (toolNameRaw is Map && toolNameRaw.containsKey('name')) {
           toolName = toolNameRaw['name'].toString();
@@ -232,19 +245,30 @@ Future<void> auditSingleTranscript(
           }
 
           if (argsData is String) {
-            try { argsData = jsonDecode(argsData); } catch (_) { argsData = <String, dynamic>{}; }
+            try {
+              argsData = jsonDecode(argsData);
+            } catch (_) {
+              argsData = <String, dynamic>{};
+            }
           }
 
           if (argsData is Map) {
-            dynamic cmd = argsData['CommandLine'] ?? argsData['command_line'] ?? argsData['command'];
+            dynamic cmd = argsData['CommandLine'] ??
+                argsData['command_line'] ??
+                argsData['command'];
             String repo = argsData['Cwd']?.toString() ?? 'unknown';
-            
+
             if (cmd != null) {
               if (cmd is String && cmd.startsWith('"') && cmd.endsWith('"')) {
-                try { cmd = jsonDecode(cmd); } catch (_) {}
+                try {
+                  cmd = jsonDecode(cmd);
+                } catch (_) {}
               }
               var cmdStr = cmd.toString();
-              commandTracker.putIfAbsent(cmdStr, () => {'total': 0, 'convos': <String>{}, 'repos': <String>{}});
+              commandTracker.putIfAbsent(
+                  cmdStr,
+                  () =>
+                      {'total': 0, 'convos': <String>{}, 'repos': <String>{}});
               commandTracker[cmdStr]!['total']++;
               (commandTracker[cmdStr]!['convos'] as Set<String>).add(convoId);
               (commandTracker[cmdStr]!['repos'] as Set<String>).add(repo);
@@ -256,7 +280,8 @@ Future<void> auditSingleTranscript(
           sequenceCount++;
         } else {
           if (sequenceCount > 2 && lastTool != null) {
-            sequenceTracker.putIfAbsent(lastTool, () => {'instances': 0, 'convos': <String>{}});
+            sequenceTracker.putIfAbsent(
+                lastTool, () => {'instances': 0, 'convos': <String>{}});
             sequenceTracker[lastTool]!['instances']++;
             (sequenceTracker[lastTool]!['convos'] as Set<String>).add(convoId);
           }
@@ -268,7 +293,8 @@ Future<void> auditSingleTranscript(
   }
 
   if (sequenceCount > 2 && lastTool != null) {
-    sequenceTracker.putIfAbsent(lastTool, () => {'instances': 0, 'convos': <String>{}});
+    sequenceTracker.putIfAbsent(
+        lastTool, () => {'instances': 0, 'convos': <String>{}});
     sequenceTracker[lastTool]!['instances']++;
     (sequenceTracker[lastTool]!['convos'] as Set<String>).add(convoId);
   }

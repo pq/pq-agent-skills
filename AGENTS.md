@@ -6,13 +6,14 @@ Run the checks before sending a change:
 
 ```bash
 dart pub get
+dart format .
 dart analyze --fatal-infos
 dart tool/check_docs.dart            # add --skill <name> or --base <ref>
 ```
 
 CI (`.github/workflows/checks.yaml`) runs the same commands on every pull
-request. `dart format` is not enforced yet because some existing scripts are
-not formatted; do format the files you add or change.
+request; it checks formatting with
+`dart format --output=none --set-exit-if-changed .`.
 
 `tool/check_docs.dart` enforces these conventions:
 

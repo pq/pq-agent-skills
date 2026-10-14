@@ -16,6 +16,6 @@ jobs:
         with:
           sdk: stable
       - run: dart pub get
+      - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
-      # dart format is not enforced yet: some existing scripts are unformatted.
       - run: dart tool/check_docs.dart --base origin/${{ github.base_ref || 'main' }}
