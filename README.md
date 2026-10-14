@@ -266,5 +266,5 @@ Once the skills are installed, you can invoke them in your agent chat interface 
 
 New skills go in `skills/<name>/` with a `SKILL.md` and an entry in this README.
 See [AGENTS.md](AGENTS.md) for the repository conventions, and run
-`dart analyze --fatal-infos` and `dart tool/check_docs.dart` before sending a
-pull request (CI runs both).
+`dart format .`, `dart analyze --fatal-infos`, and `dart tool/check_docs.dart`
+before sending a pull request (CI checks all three).
