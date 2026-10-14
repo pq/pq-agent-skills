@@ -15,6 +15,11 @@ Audits previous conversation transcripts to help you identify ways to tune your 
 ### 📉 Analyze Workflow Failures
 Fetches recent GitHub Actions workflow runs across multiple repositories, filters out Dependabot runs for separate statistics, and groups failure causes to highlight the top recurring issues. Allows you to easily spot broken tests or systemic infrastructure issues across your GitHub projects.
 
+### 🎛️ Review Tuner (Experimental)
+Mines human pull-request review feedback to propose, and optionally verify, changes to a repository's agent guidance (review style guides, bot config, `AGENTS.md`, skills). Three modes: **propose** (drafts changes from review evidence, no replays), **check** (a quick replay: one review per guidance version on a few PRs, verdict *helps / no effect / hurts*), and **evaluate** (thorough replays with a blind judge, fidelity against the real bot, and a confidence rubric). Works on any GitHub repo; favorite repos and reviewer roles live in one config file (`~/.config/review-tuner/config.json`). It only writes to GitHub to open draft PRs in your own fork, and only after you approve each one.
+
+Design background, decisions, lessons, and roadmap: [skills/review-tuner/docs/README.md](skills/review-tuner/docs/README.md).
+
 ---
 
 ## 📊 Example Run Output
@@ -228,6 +233,7 @@ mkdir -p ~/.gemini/config/skills
 ln -s ~/src/pq-agent-skills/skills/estimate-conversation-tokens ~/.gemini/config/skills/estimate-conversation-tokens
 ln -s ~/src/pq-agent-skills/skills/conversation-auditor ~/.gemini/config/skills/conversation-auditor
 ln -s ~/src/pq-agent-skills/skills/analyze-workflow-failures ~/.gemini/config/skills/analyze-workflow-failures
+ln -s ~/src/pq-agent-skills/skills/review-tuner ~/.gemini/config/skills/review-tuner
 ```
 
 ### Option 3: Workspace Integration (Project-specific)
@@ -253,6 +259,7 @@ Once the skills are installed, you can invoke them in your agent chat interface 
    /estimate-conversation-tokens
    /conversation-auditor
    /analyze-workflow-failures
+   /review-tuner
    ```
 
 2. **Via Natural Language:**

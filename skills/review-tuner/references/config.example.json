@@ -1,0 +1,30 @@
+{
+  "dataDir": "~/review-tuner-data",
+  "weights": {
+    "maintainer": 1.0,
+    "upstream": 0.75,
+    "googler": 0.75,
+    "contractor": 0.5,
+    "external": 0.5
+  },
+  "people": {
+    "some-colleague": "googler"
+  },
+  "repos": {
+    "my-org/my-repo": {
+      "alias": "my-repo",
+      "bot": "gemini-code-assist[bot]",
+      "harness": {
+        "guidance": [".gemini/styleguide.md", ".gemini/config.yaml"]
+      },
+      "automationAuthors": ["dependabot[bot]"],
+      "roles": {
+        "lead-maintainer": "maintainer",
+        "upstream-partner": "upstream"
+      }
+    },
+    "my-org/other-repo": {
+      "alias": "other"
+    }
+  }
+}
