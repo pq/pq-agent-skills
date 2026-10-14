@@ -281,6 +281,11 @@ A reply is an acknowledgment only if every word left (after quotes, links, menti
 
 Status: accepted
 
+### D59: Drafted rules state when they apply; checks include a near-miss negative
+A rule distilled from a few review comments tends to lose the comments' context. Drafting now reads the definition of any helper or API a rule recommends and names the situation it replaces, and offers the wider family when the evidence names one member. `check` and `evaluate` include at least one near-miss negative (looks like the target, shouldn't be flagged), because unrelated negatives can't show where a rule stops. Prompted by a maintainer narrowing one bullet and widening another on an approved PR that a quick check had passed ([lessons.md](lessons.md)).
+
+Status: accepted
+
 ## Complexity backed out
 
 What the pilot had and the skill deliberately dropped. Bring something back

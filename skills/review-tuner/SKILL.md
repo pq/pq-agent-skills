@@ -174,6 +174,14 @@ File formats and the data layout: [references/formats.md](references/formats.md)
    - `both` if local agent config also loads it (e.g. `.aiconfig` or a review
      skill reads the style guide);
    - `local` otherwise.
+
+   **State when the rule applies.** Review comments carry context that a
+   one-line rule drops. For "use X instead of Y" rules, read X's definition in
+   the clone and name the situation it actually replaces (e.g. a helper that
+   wraps a `Switch` in a `ValueListenableBuilder` replaces that pattern, not
+   every `Switch`). When the evidence names one member of a family (one theme
+   constant), look where it's defined and offer the family as an option the
+   maintainer can accept or narrow (D59).
 7. **Confidence without replays** (apply in this order):
    - A `fix` backed by a deterministic check (two files disagree, a referenced
      symbol doesn't exist) is **High (by inspection)**, however many reviewers
@@ -211,6 +219,10 @@ It doesn't give a confidence level.
    - `cases`: the motivating PRs (at the commit the reviewer saw; find
      `commitId` in the digest, `--select` output, or corpus) plus 1-2
      negatives (recent PRs touching similar files where the issue is absent).
+     Make at least one negative a **near miss**: code that looks like the
+     rule's target but shouldn't be flagged (e.g. a plain `Switch` for a rule
+     about a `Switch` inside a builder). Unrelated negatives only show the
+     rule doesn't fire at random; near misses show where it stops (D59).
      Give each `set`, `want` (`flag` or `no-flag`), and `group` (`any` or a
      `pathGroups` key) if path groups matter.
    - `models`: leave the default (one run on your own model) unless asked.
@@ -237,7 +249,7 @@ Use for a suggestion headed for a PR that people will rely on. Same steps as
      motivating comments;
    - a **guard**: a case where the rule *should* still fire (a synthetic patch
      under `patches/` is fine);
-   - **3 negatives**;
+   - **3 negatives**, at least one of them a near miss (see check step 2);
    - `runs: 3` for the primary model, and optionally extra models with
      `runs: 1` (a robustness check, reported separately);
    - `evidence` counts (required: scoring an `evaluate` run without them
