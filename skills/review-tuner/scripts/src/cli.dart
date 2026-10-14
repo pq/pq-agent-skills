@@ -12,12 +12,30 @@ const exitFailure = 1;
 /// Exit code for invalid command-line arguments.
 const exitBadUsage = 2;
 
-/// Retries for a transient `gh` failure; the backoff grows quadratically.
-const _ghRetries = 4;
-const _ghBackoffSeconds = 5;
+/// Retries for a transient `gh` failure; the backoff doubles (2, 4, 8 s).
+const _ghRetries = 3;
+const _ghBackoffSeconds = 2;
 
-/// Lowercased `gh` stderr fragments that mark a failure as transient.
-const _transient = ['rate limit', 'http 5', 'timeout', 'something went wrong'];
+/// A `gh` call that runs longer than this is killed and counts as transient.
+const ghTimeout = Duration(seconds: 120);
+
+/// Lowercased `gh` stderr fragments that mark a failure as transient. The
+/// primary rate limit ("API rate limit exceeded") is not one: it resets
+/// within the hour, so retrying only delays the failure.
+const _transient = [
+  'secondary rate limit',
+  'http 5',
+  'timeout',
+  'timed out',
+  'something went wrong',
+  'connection reset',
+];
+
+/// What a primary rate limit means for the user, added to its error.
+const _rateLimitHint = ' [not retried: the primary rate limit resets within '
+    'the hour; "Authenticated requests" in the message means gh has no valid '
+    'token in this shell (sandboxed shells often lack it): check '
+    '`gh auth status`]';
 
 /// The running script's usage text, printed with every usage error.
 String _usage = '';
@@ -139,29 +157,69 @@ final class CommandException implements Exception {
 }
 
 /// Runs `gh` with [args] and returns its stdout, retrying transient failures
-/// (rate limits, HTTP 5xx, timeouts). [step] names the failure.
-Future<String> gh(List<String> args, {String? step}) async {
+/// (secondary rate limits, HTTP 5xx, timeouts) a few times with a short
+/// backoff, at most [retries] times. Each attempt is killed after [timeout].
+/// [step] names the failure.
+Future<String> gh(
+  List<String> args, {
+  String? step,
+  Duration timeout = ghTimeout,
+  int retries = _ghRetries,
+}) async {
   for (var attempt = 0;; attempt++) {
-    var result = await Process.run('gh', args,
-        stdoutEncoding: utf8, stderrEncoding: utf8);
-    if (result.exitCode == 0) return result.stdout as String;
-    var err = (result.stderr as String).trim();
-    var transient = _transient.any(err.toLowerCase().contains);
-    if (!transient || attempt >= _ghRetries) {
+    var result = await _run('gh', args, timeout: timeout);
+    if (result.exitCode == 0) return result.stdout;
+    var err = result.stderr;
+    var lower = err.toLowerCase();
+    var transient = _transient.any(lower.contains);
+    if (!transient || attempt >= retries) {
+      if (lower.contains('rate limit') && !lower.contains('secondary')) {
+        err += _rateLimitHint;
+      }
       throw CommandException(step ?? 'gh ${args.take(2).join(' ')}', err);
     }
-    var wait = _ghBackoffSeconds * (attempt + 1) * (attempt + 1);
-    await Future<void>.delayed(Duration(seconds: wait));
+    await Future<void>.delayed(Duration(seconds: _ghBackoffSeconds << attempt));
   }
 }
 
-/// Runs `git` with [args] in [dir] and returns its stdout.
-Future<String> git(String dir, List<String> args, {String? step}) async {
-  var result = await Process.run('git', args,
-      workingDirectory: dir, stdoutEncoding: utf8, stderrEncoding: utf8);
+/// Runs `git` with [args] in [dir] and returns its stdout. With a [timeout],
+/// a slower `git` is killed and fails. Never prompts for credentials.
+Future<String> git(String dir, List<String> args,
+    {String? step, Duration? timeout}) async {
+  var result = await _run('git', args, dir: dir, timeout: timeout);
   if (result.exitCode != 0) {
-    throw CommandException(
-        step ?? 'git ${args.first}', (result.stderr as String).trim());
+    throw CommandException(step ?? 'git ${args.first}', result.stderr);
   }
-  return result.stdout as String;
+  return result.stdout;
+}
+
+/// Runs [executable]; if it outlives [timeout], kills it and reports a
+/// failure whose stderr says it timed out.
+Future<({int exitCode, String stdout, String stderr})> _run(
+  String executable,
+  List<String> args, {
+  String? dir,
+  Duration? timeout,
+}) async {
+  var process = await Process.start(executable, args,
+      workingDirectory: dir, environment: const {'GIT_TERMINAL_PROMPT': '0'});
+  var out = process.stdout.transform(utf8.decoder).join();
+  var err = process.stderr.transform(utf8.decoder).join();
+  var timedOut = false;
+  var exitCode = await (timeout == null
+      ? process.exitCode
+      : process.exitCode.timeout(timeout, onTimeout: () {
+          timedOut = true;
+          process.kill(ProcessSignal.sigkill);
+          return exitFailure;
+        }));
+  if (timedOut) {
+    // Children (e.g. git under gh) may keep the pipes open; don't wait.
+    return (
+      exitCode: exitCode,
+      stdout: '',
+      stderr: 'timed out after ${timeout!.inSeconds} s',
+    );
+  }
+  return (exitCode: exitCode, stdout: await out, stderr: (await err).trim());
 }

@@ -70,7 +70,12 @@ feature-flag name, not the concern. After tightening the regex: 6/18 → 15/18.
 In `flutter/flutter`, an auto-roller account counted as 160 maintainer PRs.
 Marking an agent account (named after a person) as a bot would also drop the
 human reviews of its PRs.
-→ Default automation patterns and an agent-account list are roadmap items.
+→ Default automation patterns (D55) and a separate agent-account list (D56).
+On the same 14-day window the defaults matched the hand-written config
+exactly (402 PRs, 182 excluded, same 47 maintainer reviewers). A
+`(^|[-_])bot$` pattern alone missed two accounts (`fluttergithubbot`,
+`flutteractionsbot`) that end in `bot` with no separator; a bare `bot$` would
+also catch human names, so the defaults add `(github|actions)-?bot$` instead.
 
 **GitHub search caps at 1000 results.**
 Busy repos hit it within weeks (`flutter/flutter` used a 14-day window).
@@ -108,7 +113,18 @@ relative to the wrong directory, and most rules lived behind those links.
 **Sequential content fetches can hang; code search lies by omission.**
 One audit spent ~40 minutes on sequential fetches, and code search reported
 existing symbols as missing.
-→ Empty code search is inconclusive (D51); shallow clone is roadmap work.
+→ Empty code search is inconclusive (D51); the audit reads a shallow clone
+(D54). The likely cause of the hang is the next entry.
+
+**Slow runs were retries of a rate limit that couldn't clear.**
+In a sandboxed shell `gh` had no valid token, so requests went out
+unauthenticated from a shared IP and got "API rate limit exceeded" (HTTP 403).
+`gh()` treated any "rate limit" as transient and retried 4 times (5 + 20 + 45 +
+80 s), so every call took ~150 s and then failed: a 6-PR collection that takes
+~3 s outside the sandbox spent 2.5 minutes on the listing query alone, and
+sequential per-file fetches add up to tens of minutes.
+→ D53: the primary rate limit fails at once, with a hint to check
+`gh auth status`; SKILL.md says to rerun outside the sandbox.
 
 **A judge without the style guide calls guide-mandated nits noise.**
 In P0-1 the judge rated style-guide-mandated nits as noise, in both arms alike.

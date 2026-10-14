@@ -251,6 +251,26 @@ Two files disagree, or a referenced symbol doesn't exist. Reports say "by inspec
 
 Status: accepted
 
+### D53: `gh` retries only transient errors, briefly, with a per-call timeout
+Secondary rate limits, HTTP 5xx, and timeouts get 3 retries (2, 4, 8 s); each call is killed after 120 s. The primary rate limit fails at once with a hint, since it resets within the hour ([lessons.md](lessons.md)).
+
+Status: accepted
+
+### D54: The audit reads a shallow clone, not the contents API
+`collect.dart guidance` keeps a depth-1 clone of the default branch at `<repoDir>/head/` (git under timeouts) and lists agent files, harness guidance, contribution docs, and broken relative links (D51). Agents read files there.
+
+Status: accepted
+
+### D55: Built-in automation patterns on every repo, plus a warning for the rest
+Login regexes (`-autoroll(er)?$`, `roller`, `(^|[-_])bot$`, `^bot-`, `(github|actions)-?bot$`, `github-actions`) join `[bot]` logins and `automationAuthors`: PRs excluded, comments `bot`. A repo's `automationPatterns` replaces them (`[]` disables); an explicit role beats a pattern, so a role fixes a false positive. Stats list unmatched logins with ≥ 10 PRs (or ≥ 20%) and no substantive comment as possible automation. On `flutter/flutter` the defaults matched a hand-written run-local config exactly ([lessons.md](lessons.md)).
+
+Status: accepted
+
+### D56: Agent accounts are a separate list: PRs kept, own comments `agent`
+An AI agent opening PRs for a person gets human review, so `agentAuthors` (per repo, or top level for all repos) keeps its PRs and gives only its own comments the `agent` role, which, like `bot`, is never human evidence. Not a default: logins ending in `-agent` or `[agent]` are only listed as a stats hint.
+
+Status: accepted
+
 ## Complexity backed out
 
 What the pilot had and the skill deliberately dropped. Bring something back

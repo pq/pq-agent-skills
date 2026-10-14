@@ -11,7 +11,8 @@ reported as "no results".
 
 ```
 <dataDir>/<owner>/<repo>/
-  repo/                               clone of the target repo (collect/prepare)
+  repo/                               clone of the target repo (prepare)
+  head/                               depth-1 clone of the default branch (collect guidance)
   corpus/<since>_<until>.jsonl        collect.dart output (one PR per line)
   corpus/<since>_<until>.stats.json   review-density summary
   corpus/<since>_<until>.digest.md    digest (written by collect and digest)
@@ -36,6 +37,37 @@ reported as "no results".
       score.json, report.md
 ```
 
+## User config
+
+Example: [config.example.json](config.example.json). Every key is optional.
+
+| Key | Meaning |
+|---|---|
+| `dataDir` | root of the data layout above (default `~/review-tuner-data`) |
+| `weights` | role → weight (defaults: `maintainer` 1.0, `external` 0.5; unknown roles get the `external` weight) |
+| `people` | login → role, in every repo |
+| `agentAuthors` | AI agent accounts in every repo (added to each repo's list) |
+| `repos.<owner/name>.alias` | short name for `--repo` |
+| `repos.….bot` | the review bot's login (default `gemini-code-assist[bot]`) |
+| `repos.….harness.guidance` | guidance files a simulated reviewer reads |
+| `repos.….roles` | login → role in this repo (overrides `people`) |
+| `repos.….automationAuthors` | automation accounts: their PRs are excluded, their comments are `bot` |
+| `repos.….automationPatterns` | login regexes (case-insensitive) treated like `automationAuthors`; replaces the defaults, `[]` disables them |
+| `repos.….agentAuthors` | AI agent accounts: their PRs are **kept**, their own comments are `agent` |
+
+Default `automationPatterns` (every repo, configured or not):
+`-autoroll(er)?$`, `roller`, `(^|[-_])bot$`, `^bot-`, `(github|actions)-?bot$`,
+`github-actions`. A login with an explicit role (`roles` or `people`) is not
+matched by patterns, so a role fixes a false positive; `automationAuthors` and
+`agentAuthors` win over roles.
+
+Role resolution, first match wins: the repo's bot or any `[bot]` login →
+`bot`; `agentAuthors` → `agent`; `automationAuthors` → `bot`; repo `roles`;
+`people`; an `automationPatterns` match → `bot`; GitHub's
+`authorAssociation` (`OWNER`, `MEMBER`, `COLLABORATOR` → `maintainer`); else
+`external`. `bot` and `agent` comments are never human evidence: they're left
+out of human totals, weights, reviewer counts, and theme counts.
+
 ## Command-line options
 
 Every script prints its usage with `--help`. Unknown options exit `2`.
@@ -43,12 +75,12 @@ Every script prints its usage with `--help`. Unknown options exit `2`.
 | Script | Option | Meaning |
 |---|---|---|
 | all three | `--config <path>` | user config file (default `$REVIEW_TUNER_CONFIG`, else `~/.config/review-tuner/config.json`) |
-| `collect.dart` | `--repo <owner/name\|alias>` | target repository (collect; optional for `digest`, used for bot and roles) |
+| `collect.dart` | `--repo <owner/name\|alias>` | target repository (collect, `guidance`; optional for `digest`, used for bot and roles) |
 | | `--since <date>` / `--until <date>` | window of PR close dates, inclusive, UTC (`YYYY-MM-DD`, both or neither) |
 | | `--days <n>` | window ending today (default 90) |
 | | `--concurrency <n>` | parallel PR queries (default 4) |
 | | `--max-chars <n>` | excerpt length in the digest (default 300) |
-| | `--output-file <path>` | corpus JSONL path (collect), digest or select JSON (digest) |
+| | `--output-file <path>` | corpus JSONL path (collect), digest or select JSON (digest), guidance JSON (`guidance`) |
 | | `--corpus`, `--stdout`, `--select`, `--path`, `--bot`, `--rebuttals` | digest options; see "Digest and `--select`" |
 | `prepare.dart` | `--repo <owner/name\|alias>` / `--id <id>` | `init`: target repo and eval id |
 | | `--eval <evalDir>` | `check` / `evaluate`: the eval directory |
@@ -67,8 +99,9 @@ One PR per line: its metadata (`number`, `title`, `url`, `mergedAt`,
 comment has `kind` (`inline`, `review`, `issue`), `author`, `role`, `weight`,
 `isPrAuthor`, `body`, and, when known, `path`, `line`, `commitId`, `threadId`
 (the thread's first comment), `threadResolved`, and `severity`. Roles come
-from the user config (repo `roles`, then `people`, then GitHub's
-`authorAssociation`, else `external`); bots are `bot`. `severity` is set
+from the user config ([role resolution](#user-config)); bots and automation
+accounts are `bot`, AI agent accounts `agent`. PRs by `bot` authors get
+`excludedReason: automation-author`; PRs by `agent` authors are kept. `severity` is set
 only on bot comments whose body carries a recognized severity badge (Gemini
 Code Assist's `*-priority.svg` / `critical.svg` images); other bots get none.
 Readers ignore fields older corpora still have (`reactions`, `commits`,
@@ -122,9 +155,18 @@ when none were collected).
  "truncatedPrs": {"611": ["files"]},
  "unconfiguredFrequentParticipants": [{"login": "…", "authored": 4,
                                        "comments": 21}],
+ "possibleAutomation": [{"login": "…", "authored": 160, "comments": 0}],
+ "possibleAgents": [{"login": "…-agent", "authored": 3, "comments": 7}],
  "failedPrs": {"700": "<error>"},
  "humanCommentsTotal": 339, "humanCommentsWeighted": 285.25}
 ```
+
+`possibleAutomation` and `possibleAgents` are hints over all collected PRs
+(excluded ones too), listing only logins with no role, list entry, or pattern
+match: `possibleAutomation` authored ≥ 10 PRs (or ≥ 20% of them, at least 3)
+and wrote no substantive comment; `possibleAgents` end in `-agent` or
+`[agent]`. Neither changes any count; confirm and add the login to
+`automationAuthors` or `agentAuthors`, then collect again.
 
 The proposals template's corpus line uses `prsConsidered`,
 `humanCommentsTotal`, and `bot.botInlineComments`.
@@ -335,6 +377,41 @@ The PR diff is `merge-base(PR base, commit)...commit`, using the PR's own
 base commit (`pulls/<n>` → `base.sha`), not the current default branch.
 `evaluate` checkouts have every [agent file](#agent-files) and harness
 guidance path removed.
+
+## Guidance report (`collect.dart guidance`)
+
+`collect.dart guidance --repo <repo> [--output-file <path>]` makes or updates
+`head/`, a depth-1 clone of the default branch (clone killed after 5 minutes,
+fetch after 2; a failure exits `1`), and prints what's in it. Read guidance
+files from `head/` instead of fetching them one by one. JSON
+(`--output-file`):
+
+```json
+{
+  "repo": "owner/name",
+  "head": "<dataDir>/owner/name/head",
+  "commit": "<sha>",
+  "agentFiles": [".gemini/styleguide.md", "AGENTS.md"],
+  "agentRoots": [".gemini", "AGENTS.md"],
+  "harnessGuidance": [{"path": ".gemini/styleguide.md", "present": true}],
+  "contributionDocs": [".github/PULL_REQUEST_TEMPLATE.md", "CONTRIBUTING.md"],
+  "linksChecked": 15,
+  "brokenLinks": [
+    {"file": ".gemini/styleguide.md", "line": 38, "target": "STYLE.md",
+     "resolvesTo": ".gemini/STYLE.md"}
+  ]
+}
+```
+
+- `agentFiles`: every file under an [agent file](#agent-files) root.
+  `harnessGuidance`: the config's `harness.guidance` paths.
+  `contributionDocs`: `PULL_REQUEST_TEMPLATE.md` and `CONTRIBUTING.md` at the
+  root or in `.github/` (any case).
+- Links are checked in the markdown (`.md`, `.mdc`) agent and guidance files:
+  inline and reference-style links, outside code spans and fenced blocks,
+  resolved from the linking file's directory (`/...` from the repo root).
+  URLs with a scheme and `#anchor`-only links are skipped; anchors aren't
+  checked. A link that escapes the repo counts as broken.
 
 ## Agent files
 

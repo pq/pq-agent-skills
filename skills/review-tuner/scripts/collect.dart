@@ -1,6 +1,7 @@
 /// Collects pull request review activity for a repository over a date window
 /// into a corpus (with a `.stats.json` review-density summary and a digest),
-/// and digests a corpus or counts the comments matching a theme (`--select`).
+/// digests a corpus or counts the comments matching a theme (`--select`), and
+/// reports a repo's agent guidance from a shallow clone (`guidance`).
 ///
 /// Usage (also printed by `--help` and on a usage error):
 ///
@@ -14,6 +15,8 @@
 ///     dart collect.dart digest --corpus <corpus.jsonl> --select <regex>
 ///         [--path <regex>] [--bot [--rebuttals <ids|@file>]]
 ///         [--output-file <select.json>] [--repo <owner/name>] [--config <path>]
+///     dart collect.dart guidance --repo <owner/name|alias>
+///         [--output-file <guidance.json>] [--config <path>]
 ///
 /// Outputs, counting rules, and exit codes: `references/formats.md`.
 library;
@@ -24,6 +27,7 @@ import 'dart:io';
 import 'src/cli.dart';
 import 'src/config.dart';
 import 'src/corpus.dart';
+import 'src/guidance.dart';
 
 const usage = '''
 Usage:
@@ -36,7 +40,9 @@ Usage:
       [--config <path>]
   dart collect.dart digest --corpus <corpus.jsonl> --select <regex>
       [--path <regex>] [--bot [--rebuttals <ids|@file>]]
-      [--output-file <select.json>] [--repo <owner/name>] [--config <path>]''';
+      [--output-file <select.json>] [--repo <owner/name>] [--config <path>]
+  dart collect.dart guidance --repo <owner/name|alias>
+      [--output-file <guidance.json>] [--config <path>]''';
 
 /// GitHub search returns at most this many results per query.
 const _searchCap = 1000;
@@ -78,6 +84,14 @@ const _progressInterval = 10;
 /// candidate for the config's `people` or `roles`.
 const _frequentParticipant = (authored: 2, comments: 5);
 
+/// A login that authored at least `authored` PRs, or at least `share` of the
+/// collected PRs (and `minAuthored`), with no substantive comments, is listed
+/// as possible unconfigured automation.
+const _possibleAutomation = (authored: 10, share: 0.2, minAuthored: 3);
+
+/// Logins that look like AI agent accounts (a hint, not a default).
+final _agentLogin = RegExp(r'(-agent|\[agent\])$', caseSensitive: false);
+
 Future<void> main(List<String> argv) => guarded(usage, argv, () async {
       var command = 'collect';
       var rest = argv;
@@ -115,6 +129,11 @@ Future<void> main(List<String> argv) => guarded(usage, argv, () async {
           });
           if (args.positional.isNotEmpty) usageError('Unexpected arguments.');
           runDigest(args.options);
+        case 'guidance':
+          var args =
+              parseArgs(rest, options: {'repo', 'output-file', 'config'});
+          if (args.positional.isNotEmpty) usageError('Unexpected arguments.');
+          await runGuidance(args.options);
         default:
           usageError('Unknown command "$command".');
       }
@@ -253,7 +272,6 @@ PullRequest parsePr(Map<String, Object?> node, Config config, RepoConfig repo) {
   var author = _login(node['author']);
   var association = node['authorAssociation'] as String?;
   var role = config.roleFor(repo, author, authorAssociation: association);
-  var automation = {for (var a in repo.automationAuthors) a.toLowerCase()};
   return PullRequest(
     number: node['number'] as int,
     title: node['title'] as String? ?? '',
@@ -288,9 +306,7 @@ PullRequest parsePr(Map<String, Object?> node, Config config, RepoConfig repo) {
       if (_nodes(node['reviewThreads']).any((t) => _hasNextPage(t['comments'])))
         'threadComments',
     ],
-    excludedReason: role == 'bot' || automation.contains(author.toLowerCase())
-        ? 'automation-author'
-        : null,
+    excludedReason: role == 'bot' ? 'automation-author' : null,
   );
 }
 
@@ -441,6 +457,21 @@ RepoConfig _repoOption(Config config, String slug) =>
     config.repo(slug) ??
     usageError('Unknown repo "$slug": use owner/name or an alias.');
 
+Future<void> runGuidance(Map<String, String> options) async {
+  var slug = options['repo'] ?? usageError('Missing --repo <owner/name>.');
+  var config = loadConfig(path: options['config']);
+  var repo = _repoOption(config, slug);
+  String head;
+  try {
+    head = await updateHead(config, repo);
+  } on CommandException catch (e) {
+    fail('Failed to clone or update ${repo.slug}: $e');
+  }
+  var report = guidanceReport(repo, head);
+  if (options['output-file'] case var path?) writeJson(path, report);
+  stdout.write(renderGuidance(report));
+}
+
 Future<void> runCollect(Map<String, String> options) async {
   var slug = options['repo'] ?? usageError('Missing --repo <owner/name>.');
   var config = loadConfig(path: options['config']);
@@ -563,6 +594,7 @@ Map<String, Object?> computeStats(
         if (p.truncated.isNotEmpty) '${p.number}': p.truncated,
     },
     'unconfiguredFrequentParticipants': _unconfigured(considered, config, repo),
+    ..._accountHints(prs, config, repo),
     'failedPrs': {
       for (var MapEntry(:key, :value) in failures.entries) '$key': value,
     },
@@ -631,11 +663,58 @@ List<Map<String, Object?>> _unconfigured(
   return [
     for (var MapEntry(key: login, value: n) in counts.entries)
       if (!config.hasRole(repo, login) &&
-          config.roleFor(repo, login) != 'bot' &&
+          !_isAutomated(config.roleFor(repo, login)) &&
           (n.authored >= _frequentParticipant.authored ||
               n.comments >= _frequentParticipant.comments))
         {'login': login, 'authored': n.authored, 'comments': n.comments},
   ]..sort((a, b) => (b['comments'] as int).compareTo(a['comments'] as int));
+}
+
+bool _isAutomated(String role) => role == 'bot' || role == 'agent';
+
+/// Accounts over all collected [prs] (excluded ones too) that look like
+/// automation or AI agents but have no role, pattern match, or list entry:
+/// `possibleAutomation` (many PRs, no substantive comments) and
+/// `possibleAgents` (logins ending in `-agent` or `[agent]`).
+Map<String, Object?> _accountHints(
+    List<PullRequest> prs, Config config, RepoConfig repo) {
+  var authored = <String, int>{};
+  var comments = <String, int>{};
+  var substantive = <String, int>{};
+  for (var pr in prs) {
+    authored.update(pr.author, (n) => n + 1, ifAbsent: () => 1);
+    for (var c in pr.comments) {
+      comments.update(c.author, (n) => n + 1, ifAbsent: () => 1);
+      if (isSubstantive(c.body)) {
+        substantive.update(c.author, (n) => n + 1, ifAbsent: () => 1);
+      }
+    }
+  }
+  bool unconfigured(String login) =>
+      !config.hasRole(repo, login) &&
+      !_isAutomated(config.roleFor(repo, login));
+  Map<String, Object?> entry(String login) => {
+        'login': login,
+        'authored': authored[login] ?? 0,
+        'comments': comments[login] ?? 0,
+      };
+  int byAuthored(Map a, Map b) =>
+      (b['authored'] as int).compareTo(a['authored'] as int);
+  var limits = _possibleAutomation;
+  return {
+    'possibleAutomation': [
+      for (var MapEntry(key: login, value: n) in authored.entries)
+        if ((n >= limits.authored ||
+                (n >= limits.minAuthored && n >= limits.share * prs.length)) &&
+            (substantive[login] ?? 0) == 0 &&
+            unconfigured(login))
+          entry(login),
+    ]..sort(byAuthored),
+    'possibleAgents': [
+      for (var login in {...authored.keys, ...comments.keys})
+        if (_agentLogin.hasMatch(login) && unconfigured(login)) entry(login),
+    ]..sort(byAuthored),
+  };
 }
 
 Map<String, int> _tally(Iterable<String> values) {
@@ -695,6 +774,22 @@ String renderStats(Map<String, Object?> s) {
   _list(b, 'Unconfigured frequent participants', [
     for (var u in (s['unconfiguredFrequentParticipants'] as List).cast<Map>())
       '${u['login']}: authored ${u['authored']}, comments ${u['comments']}',
+  ]);
+  _list(
+      b,
+      'Possible automation (unconfigured; add to automationAuthors '
+      'if so)',
+      [
+        for (var u
+            in (s['possibleAutomation'] as List? ?? const []).cast<Map>())
+          '${u['login']}: authored ${u['authored']}, '
+              'no substantive comments',
+      ]);
+  _list(
+      b, 'Possible agent accounts (unconfigured; add to agentAuthors if so)', [
+    for (var u in (s['possibleAgents'] as List? ?? const []).cast<Map>())
+      '${u['login']}: authored ${u['authored']}, '
+          'comments ${u['comments']}',
   ]);
   _list(b, 'Truncated PRs (first page only)', [
     for (var MapEntry(:key, :value) in (s['truncatedPrs'] as Map).entries)

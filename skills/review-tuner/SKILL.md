@@ -34,11 +34,13 @@ All scripts print markdown and exit `0` (ok), `1` (a step failed or input
 data is invalid: report it, never treat it as "no results"), or `2` (bad
 arguments). `collect.dart` and `score.dart` also write JSON with
 `--output-file`; `prepare.dart` writes `tasks.json` into the run directory. They need `gh` (authenticated) and `git`; run them with
-network access.
+network access. An "API rate limit exceeded ... Authenticated requests" error
+means `gh` has no token in that shell (sandboxed shells often can't read it):
+rerun outside the sandbox rather than waiting.
 
 | Script | Subcommands |
 |---|---|
-| `collect.dart` | (default) collect a PR corpus and its digest; `digest` re-digest a corpus or count a theme (`--select`) |
+| `collect.dart` | (default) collect a PR corpus and its digest; `digest` re-digest a corpus or count a theme (`--select`); `guidance` list a repo's agent files and broken links from a shallow clone |
 | `prepare.dart` | `init` an eval; `check` / `evaluate` write reviewer tasks; `judge` writes judge tasks |
 | `score.dart` | `validate`, `replay`, `noise`, `fidelity`, `rubric`, `all` |
 
@@ -49,7 +51,8 @@ File formats and the data layout: [references/formats.md](references/formats.md)
 1. Config path: `$REVIEW_TUNER_CONFIG`, else `~/.config/review-tuner/config.json`.
    If it doesn't exist, tell the user the skill works with defaults, and offer
    to create one from [references/config.example.json](references/config.example.json)
-   (favorite repos, per-repo bot and guidance files, roles, weights). Never
+   (favorite repos, per-repo bot and guidance files, roles, weights,
+   automation and agent accounts). Never
    write it without asking.
    **File access:** reviewers and judges read and write under the data dir
    (`dataDir`, default `~/review-tuner-data`). If your agent restricts file
@@ -75,33 +78,45 @@ File formats and the data layout: [references/formats.md](references/formats.md)
    `<dataDir>/<owner>/<repo>/corpus/`. Read the summary. If fewer than 20 PRs have substantive human comments, or there are
    fewer than 50 human comments, say so and suggest a longer window before
    continuing.
+   **Check the account hints.** Built-in patterns treat accounts like
+   `*-autoroll` or `*-bot` as automation (PRs excluded, comments `bot`). If
+   the summary lists "Possible automation" or "Possible agent accounts", or a
+   reviewer or PR author in the tables is clearly not a person, tell the user
+   and collect again with a config listing them: `automationAuthors` for
+   automation (PRs dropped), `agentAuthors` for AI agents acting for a person
+   (PRs kept, since humans review them; the agent's own comments don't
+   count). Never list an agent under `automationAuthors`: that drops the
+   human reviews of its PRs. Without a user-approved config change, write a
+   run-local config next to the report and pass it with `--config`
+   ([config keys](references/formats.md#user-config)).
 2. **Digest:** read `corpus/<since>_<until>.digest.md`. It's your main input;
    don't read the raw corpus. (`collect.dart digest --corpus <file>` regenerates
    it; `--max-chars N` gives longer excerpts.)
 3. **Audit the guidance itself** (cheap, deterministic):
-   - **Find the agent files:** `gh api "repos/<repo>/git/trees/HEAD?recursive=1"
-     --jq '.tree[].path'`, filtered for the
+   - **Find the agent files:** `collect.dart guidance --repo <repo>`. It makes
+     or updates a shallow clone of the default branch at
+     `<dataDir>/<owner>/<repo>/head/` and lists the
      [agent files](references/formats.md#agent-files) (the same list
-     `evaluate` strips from checkouts). Also note
-     `.github/PULL_REQUEST_TEMPLATE.md` and `CONTRIBUTING.md`.
+     `evaluate` strips from checkouts), the harness guidance files (present
+     or missing), `.github/PULL_REQUEST_TEMPLATE.md` and `CONTRIBUTING.md`,
+     and broken relative links.
    - **Read** the repo's harness guidance files (config `harness.guidance`;
      default `.gemini/styleguide.md` and `.gemini/config.yaml`), top-level agent
      files, and any skill that reviews code. Skim other skills only when a theme
-     points at them. Fetch raw text with
-     `gh api repos/<repo>/contents/<path> -H "Accept: application/vnd.github.raw"`.
+     points at them. Read them from the `head/` clone, not one `gh api`
+     call per file.
    - **Look for:** contradictions between files; classes, paths, or commands
-     named in guidance that don't exist (check against the recursive tree, or
-     with `gh api "search/code?q=<symbol>+repo:<repo>"`); rules the bot reads
+     named in guidance that don't exist (search the `head/` clone, or
+     use `gh api "search/code?q=<symbol>+repo:<repo>"`); rules the bot reads
      that differ from what local agents read. An empty code search is
-     inconclusive (it misses many symbols): confirm absence in the recursive
-     tree listing or with the contents API before calling something
-     nonexistent.
-   - **Links:** resolve relative links from the linking file's own directory
-     and flag broken ones (`[STYLE.md](STYLE.md)` inside `.gemini/` points at
-     `.gemini/STYLE.md`). The review bot most likely reads only the text of its
-     guidance files and doesn't follow links, so rules that live only in linked
-     files (`AGENTS.md`, `STYLE.md`, skills) are invisible to it: flag
-     important rules that the bot's files only link to.
+     inconclusive (it misses many symbols): confirm absence in the `head/`
+     clone before calling something nonexistent.
+   - **Links:** `guidance` resolves relative links from the linking file's own
+     directory and lists broken ones (`[STYLE.md](STYLE.md)` inside `.gemini/`
+     points at `.gemini/STYLE.md`). The review bot most likely reads only the
+     text of its guidance files and doesn't follow links, so rules that live
+     only in linked files (`AGENTS.md`, `STYLE.md`, skills) are invisible to
+     it: flag important rules that the bot's files only link to.
 4. **Find themes in the digest:**
    - the same correction made by humans on 2+ PRs (a missing rule);
    - bot comments that humans dismissed, argued with, or resolved without
