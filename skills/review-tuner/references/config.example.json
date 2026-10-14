@@ -10,6 +10,7 @@
   "people": {
     "some-colleague": "googler"
   },
+  "agentAuthors": ["shared-coding-agent"],
   "repos": {
     "my-org/my-repo": {
       "alias": "my-repo",
@@ -17,14 +18,16 @@
       "harness": {
         "guidance": [".gemini/styleguide.md", ".gemini/config.yaml"]
       },
-      "automationAuthors": ["dependabot[bot]"],
+      "automationAuthors": ["dependabot[bot]", "my-org-release-tool"],
+      "agentAuthors": ["some-dev-agent"],
       "roles": {
         "lead-maintainer": "maintainer",
         "upstream-partner": "upstream"
       }
     },
     "my-org/other-repo": {
-      "alias": "other"
+      "alias": "other",
+      "automationPatterns": ["-autoroll(er)?$", "^ci-"]
     }
   }
 }

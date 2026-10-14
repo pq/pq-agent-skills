@@ -70,7 +70,12 @@ feature-flag name, not the concern. After tightening the regex: 6/18 → 15/18.
 In `flutter/flutter`, an auto-roller account counted as 160 maintainer PRs.
 Marking an agent account (named after a person) as a bot would also drop the
 human reviews of its PRs.
-→ Default automation patterns and an agent-account list are roadmap items.
+→ Default automation patterns (D55) and a separate agent-account list (D56).
+On the same 14-day window the defaults matched the hand-written config
+exactly (402 PRs, 182 excluded, same 47 maintainer reviewers). A
+`(^|[-_])bot$` pattern alone missed two accounts (`fluttergithubbot`,
+`flutteractionsbot`) that end in `bot` with no separator; a bare `bot$` would
+also catch human names, so the defaults add `(github|actions)-?bot$` instead.
 
 **GitHub search caps at 1000 results.**
 Busy repos hit it within weeks (`flutter/flutter` used a 14-day window).

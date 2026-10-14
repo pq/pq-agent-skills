@@ -51,7 +51,8 @@ File formats and the data layout: [references/formats.md](references/formats.md)
 1. Config path: `$REVIEW_TUNER_CONFIG`, else `~/.config/review-tuner/config.json`.
    If it doesn't exist, tell the user the skill works with defaults, and offer
    to create one from [references/config.example.json](references/config.example.json)
-   (favorite repos, per-repo bot and guidance files, roles, weights). Never
+   (favorite repos, per-repo bot and guidance files, roles, weights,
+   automation and agent accounts). Never
    write it without asking.
    **File access:** reviewers and judges read and write under the data dir
    (`dataDir`, default `~/review-tuner-data`). If your agent restricts file
@@ -77,6 +78,17 @@ File formats and the data layout: [references/formats.md](references/formats.md)
    `<dataDir>/<owner>/<repo>/corpus/`. Read the summary. If fewer than 20 PRs have substantive human comments, or there are
    fewer than 50 human comments, say so and suggest a longer window before
    continuing.
+   **Check the account hints.** Built-in patterns treat accounts like
+   `*-autoroll` or `*-bot` as automation (PRs excluded, comments `bot`). If
+   the summary lists "Possible automation" or "Possible agent accounts", or a
+   reviewer or PR author in the tables is clearly not a person, tell the user
+   and collect again with a config listing them: `automationAuthors` for
+   automation (PRs dropped), `agentAuthors` for AI agents acting for a person
+   (PRs kept, since humans review them; the agent's own comments don't
+   count). Never list an agent under `automationAuthors`: that drops the
+   human reviews of its PRs. Without a user-approved config change, write a
+   run-local config next to the report and pass it with `--config`
+   ([config keys](references/formats.md#user-config)).
 2. **Digest:** read `corpus/<since>_<until>.digest.md`. It's your main input;
    don't read the raw corpus. (`collect.dart digest --corpus <file>` regenerates
    it; `--max-chars N` gives longer excerpts.)

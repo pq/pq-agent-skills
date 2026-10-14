@@ -37,6 +37,37 @@ reported as "no results".
       score.json, report.md
 ```
 
+## User config
+
+Example: [config.example.json](config.example.json). Every key is optional.
+
+| Key | Meaning |
+|---|---|
+| `dataDir` | root of the data layout above (default `~/review-tuner-data`) |
+| `weights` | role → weight (defaults: `maintainer` 1.0, `external` 0.5; unknown roles get the `external` weight) |
+| `people` | login → role, in every repo |
+| `agentAuthors` | AI agent accounts in every repo (added to each repo's list) |
+| `repos.<owner/name>.alias` | short name for `--repo` |
+| `repos.….bot` | the review bot's login (default `gemini-code-assist[bot]`) |
+| `repos.….harness.guidance` | guidance files a simulated reviewer reads |
+| `repos.….roles` | login → role in this repo (overrides `people`) |
+| `repos.….automationAuthors` | automation accounts: their PRs are excluded, their comments are `bot` |
+| `repos.….automationPatterns` | login regexes (case-insensitive) treated like `automationAuthors`; replaces the defaults, `[]` disables them |
+| `repos.….agentAuthors` | AI agent accounts: their PRs are **kept**, their own comments are `agent` |
+
+Default `automationPatterns` (every repo, configured or not):
+`-autoroll(er)?$`, `roller`, `(^|[-_])bot$`, `^bot-`, `(github|actions)-?bot$`,
+`github-actions`. A login with an explicit role (`roles` or `people`) is not
+matched by patterns, so a role fixes a false positive; `automationAuthors` and
+`agentAuthors` win over roles.
+
+Role resolution, first match wins: the repo's bot or any `[bot]` login →
+`bot`; `agentAuthors` → `agent`; `automationAuthors` → `bot`; repo `roles`;
+`people`; an `automationPatterns` match → `bot`; GitHub's
+`authorAssociation` (`OWNER`, `MEMBER`, `COLLABORATOR` → `maintainer`); else
+`external`. `bot` and `agent` comments are never human evidence: they're left
+out of human totals, weights, reviewer counts, and theme counts.
+
 ## Command-line options
 
 Every script prints its usage with `--help`. Unknown options exit `2`.
@@ -68,8 +99,9 @@ One PR per line: its metadata (`number`, `title`, `url`, `mergedAt`,
 comment has `kind` (`inline`, `review`, `issue`), `author`, `role`, `weight`,
 `isPrAuthor`, `body`, and, when known, `path`, `line`, `commitId`, `threadId`
 (the thread's first comment), `threadResolved`, and `severity`. Roles come
-from the user config (repo `roles`, then `people`, then GitHub's
-`authorAssociation`, else `external`); bots are `bot`. `severity` is set
+from the user config ([role resolution](#user-config)); bots and automation
+accounts are `bot`, AI agent accounts `agent`. PRs by `bot` authors get
+`excludedReason: automation-author`; PRs by `agent` authors are kept. `severity` is set
 only on bot comments whose body carries a recognized severity badge (Gemini
 Code Assist's `*-priority.svg` / `critical.svg` images); other bots get none.
 Readers ignore fields older corpora still have (`reactions`, `commits`,
@@ -123,9 +155,18 @@ when none were collected).
  "truncatedPrs": {"611": ["files"]},
  "unconfiguredFrequentParticipants": [{"login": "…", "authored": 4,
                                        "comments": 21}],
+ "possibleAutomation": [{"login": "…", "authored": 160, "comments": 0}],
+ "possibleAgents": [{"login": "…-agent", "authored": 3, "comments": 7}],
  "failedPrs": {"700": "<error>"},
  "humanCommentsTotal": 339, "humanCommentsWeighted": 285.25}
 ```
+
+`possibleAutomation` and `possibleAgents` are hints over all collected PRs
+(excluded ones too), listing only logins with no role, list entry, or pattern
+match: `possibleAutomation` authored ≥ 10 PRs (or ≥ 20% of them, at least 3)
+and wrote no substantive comment; `possibleAgents` end in `-agent` or
+`[agent]`. Neither changes any count; confirm and add the login to
+`automationAuthors` or `agentAuthors`, then collect again.
 
 The proposals template's corpus line uses `prsConsidered`,
 `humanCommentsTotal`, and `bot.botInlineComments`.

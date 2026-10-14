@@ -261,6 +261,16 @@ Status: accepted
 
 Status: accepted
 
+### D55: Built-in automation patterns on every repo, plus a warning for the rest
+Login regexes (`-autoroll(er)?$`, `roller`, `(^|[-_])bot$`, `^bot-`, `(github|actions)-?bot$`, `github-actions`) join `[bot]` logins and `automationAuthors`: PRs excluded, comments `bot`. A repo's `automationPatterns` replaces them (`[]` disables); an explicit role beats a pattern, so a role fixes a false positive. Stats list unmatched logins with ≥ 10 PRs (or ≥ 20%) and no substantive comment as possible automation. On `flutter/flutter` the defaults matched a hand-written run-local config exactly ([lessons.md](lessons.md)).
+
+Status: accepted
+
+### D56: Agent accounts are a separate list: PRs kept, own comments `agent`
+An AI agent opening PRs for a person gets human review, so `agentAuthors` (per repo, or top level for all repos) keeps its PRs and gives only its own comments the `agent` role, which, like `bot`, is never human evidence. Not a default: logins ending in `-agent` or `[agent]` are only listed as a stats hint.
+
+Status: accepted
+
 ## Complexity backed out
 
 What the pilot had and the skill deliberately dropped. Bring something back

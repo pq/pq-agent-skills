@@ -36,6 +36,17 @@ const associationRoles = <String, String>{
   'COLLABORATOR': 'maintainer',
 };
 
+/// Login patterns (case-insensitive) for automation accounts, applied to
+/// every repo unless its config sets `automationPatterns`.
+const defaultAutomationPatterns = [
+  r'-autoroll(er)?$',
+  r'roller',
+  r'(^|[-_])bot$',
+  r'^bot-',
+  r'(github|actions)-?bot$',
+  r'github-actions',
+];
+
 /// A well-formed `owner/name` repository slug.
 final _slug = RegExp(r'^[\w.-]+/[\w.-]+$');
 
@@ -64,8 +75,12 @@ final class RepoConfig {
     this.bot = defaultBot,
     this.harness = const Harness(guidance: defaultGuidance),
     this.automationAuthors = const [],
+    List<String> automationPatterns = defaultAutomationPatterns,
+    this.agentAuthors = const [],
     this.roles = const {},
-  });
+  }) : automationPatterns = [
+          for (var p in automationPatterns) _pattern(slug, p),
+        ];
 
   factory RepoConfig.fromJson(String slug, Map<String, Object?> json) =>
       RepoConfig(
@@ -73,10 +88,11 @@ final class RepoConfig {
         alias: json['alias'] as String?,
         bot: json['bot'] as String? ?? defaultBot,
         harness: Harness.fromJson(json['harness'] as Map<String, Object?>?),
-        automationAuthors: [
-          for (var a in json['automationAuthors'] as List? ?? const [])
-            a as String,
-        ],
+        automationAuthors: _strings(json['automationAuthors']),
+        automationPatterns: json.containsKey('automationPatterns')
+            ? _strings(json['automationPatterns'])
+            : defaultAutomationPatterns,
+        agentAuthors: _strings(json['agentAuthors']),
         roles: {
           for (var e in (json['roles'] as Map? ?? const {}).entries)
             e.key as String: e.value as String,
@@ -88,12 +104,40 @@ final class RepoConfig {
   final String? alias;
   final String bot;
   final Harness harness;
+
+  /// Accounts whose PRs are excluded and whose comments are `bot`.
   final List<String> automationAuthors;
+
+  /// Login patterns treated like [automationAuthors] unless the login has an
+  /// explicit role.
+  final List<RegExp> automationPatterns;
+
+  /// AI agent accounts: their PRs are kept, their own comments are `agent`.
+  final List<String> agentAuthors;
   final Map<String, String> roles;
 
   String get owner => slug.split('/').first;
   String get name => slug.split('/').last;
+
+  /// True if [login] matches one of [automationPatterns].
+  bool matchesAutomationPattern(String login) =>
+      automationPatterns.any((p) => p.hasMatch(login));
 }
+
+List<String> _strings(Object? json) =>
+    [for (var s in json as List? ?? const []) s as String];
+
+RegExp _pattern(String slug, String source) {
+  try {
+    return RegExp(source, caseSensitive: false);
+  } on FormatException catch (e) {
+    fail('Config: repo "$slug": invalid automationPatterns entry '
+        '"$source": ${e.message}');
+  }
+}
+
+bool _containsLogin(Iterable<String> logins, String login) =>
+    logins.any((l) => l.toLowerCase() == login.toLowerCase());
 
 /// The user config.
 final class Config {
@@ -102,6 +146,7 @@ final class Config {
     required this.weights,
     required this.people,
     required this.repos,
+    this.agentAuthors = const [],
   });
 
   /// Root for clones, corpora, and evals; `~` is expanded.
@@ -109,6 +154,9 @@ final class Config {
   final Map<String, double> weights;
   final Map<String, String> people;
   final Map<String, RepoConfig> repos;
+
+  /// AI agent accounts in every repo (added to each repo's `agentAuthors`).
+  final List<String> agentAuthors;
 
   /// Looks up a repo by `owner/name` or alias. Unknown but well-formed slugs
   /// get defaults so any repository can be targeted; anything else is null
@@ -120,16 +168,26 @@ final class Config {
     return isSlug(slugOrAlias) ? RepoConfig(slug: slugOrAlias) : null;
   }
 
-  /// Role for [login] in [repo]: `bot` for the repo's bot or any `[bot]`
-  /// login, then repo roles, global people, GitHub's [authorAssociation],
-  /// else `external`.
+  /// Role for [login] in [repo], first match wins: `bot` for the repo's bot
+  /// or any `[bot]` login; `agent` for an agent account; `bot` for a listed
+  /// automation account; repo roles, then global people; `bot` for a login
+  /// matching an automation pattern; GitHub's [authorAssociation]; else
+  /// `external`. Explicit roles override patterns, not explicit lists.
   String roleFor(RepoConfig repo, String login, {String? authorAssociation}) {
     if (login == repo.bot || login.endsWith('[bot]')) return 'bot';
+    if (isAgent(repo, login)) return 'agent';
+    if (_containsLogin(repo.automationAuthors, login)) return 'bot';
     return repo.roles[login] ??
         people[login] ??
+        (repo.matchesAutomationPattern(login) ? 'bot' : null) ??
         associationRoles[authorAssociation] ??
         'external';
   }
+
+  /// True if [login] is listed in the repo's or the global `agentAuthors`.
+  bool isAgent(RepoConfig repo, String login) =>
+      _containsLogin(repo.agentAuthors, login) ||
+      _containsLogin(agentAuthors, login);
 
   /// True if [login] has an explicit role in [repo] or `people`.
   bool hasRole(RepoConfig repo, String login) =>
@@ -189,5 +247,6 @@ Config loadConfig({String? path}) {
       for (var MapEntry(:key, :value) in repos.entries)
         key: RepoConfig.fromJson(key, value as Map<String, Object?>),
     },
+    agentAuthors: _strings(json['agentAuthors']),
   );
 }

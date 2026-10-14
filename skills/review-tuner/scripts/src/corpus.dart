@@ -106,7 +106,8 @@ final class Comment {
   final int id;
   final String author;
 
-  /// From the user config (see `Config.roleFor`); `bot` for bots.
+  /// From the user config (see `Config.roleFor`); `bot` for bots and
+  /// automation accounts, `agent` for AI agent accounts.
   final String role;
   final double weight;
   final String? association;
@@ -131,7 +132,9 @@ final class Comment {
   final String? severity;
 
   bool get isBot => role == 'bot';
-  bool get isHuman => !isBot;
+
+  /// Agent accounts' own comments are not human evidence.
+  bool get isHuman => !isBot && role != 'agent';
 
   /// The id of this comment's thread root (itself unless a reply).
   int get threadRoot => threadId ?? id;
