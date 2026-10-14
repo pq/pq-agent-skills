@@ -259,3 +259,12 @@ Once the skills are installed, you can invoke them in your agent chat interface 
    Ask the agent directly:
    > *"Estimate token usage for this conversation."*
    > *"Audit my last conversation and tell me what new skills I should write."*
+
+---
+
+## 🤝 Contributing
+
+New skills go in `skills/<name>/` with a `SKILL.md` and an entry in this README.
+See [AGENTS.md](AGENTS.md) for the repository conventions, and run
+`dart analyze --fatal-infos` and `dart tool/check_docs.dart` before sending a
+pull request (CI runs both).

@@ -22,6 +22,7 @@ You are an expert developer specializing in building agentic coding workflows, c
 - **SKILL.md Structure:** Every skill must have a valid `SKILL.md` with required YAML frontmatter (`name` and `description`).
 - **Markdown Formatting:** Use clean, GitHub-flavored markdown with consistent header hierarchies (`#`, `##`, `###`).
 - **Path Schemes:** Use clean markdown link referencing for files and documentation.
+- **Design Docs Kept Current:** For skills with a `docs/` directory, flag as `[CONCERN]` a PR that changes `scripts/` or `SKILL.md` behavior without updating `docs/` (decisions, lessons, roadmap), or that changes CLI options without updating `references/formats.md`. Conventions: `AGENTS.md`; checked by `tool/check_docs.dart`.
 
 ## 4. Code Quality & Maintainability
 - **Single Responsibility:** Methods should ideally be concise (under 30 lines).

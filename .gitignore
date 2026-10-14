@@ -11,3 +11,6 @@ pubspec.lock
 
 # OS files
 .DS_Store
+
+# Local privacy denylist for tool/check_docs.dart (never commit)
+.docs-denylist
