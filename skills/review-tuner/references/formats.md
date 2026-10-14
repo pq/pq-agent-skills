@@ -36,6 +36,29 @@ reported as "no results".
       score.json, report.md
 ```
 
+## Command-line options
+
+Every script prints its usage with `--help`. Unknown options exit `2`.
+
+| Script | Option | Meaning |
+|---|---|---|
+| all three | `--config <path>` | user config file (default `$REVIEW_TUNER_CONFIG`, else `~/.config/review-tuner/config.json`) |
+| `collect.dart` | `--repo <owner/name\|alias>` | target repository (collect; optional for `digest`, used for bot and roles) |
+| | `--since <date>` / `--until <date>` | window of PR close dates, inclusive, UTC (`YYYY-MM-DD`, both or neither) |
+| | `--days <n>` | window ending today (default 90) |
+| | `--concurrency <n>` | parallel PR queries (default 4) |
+| | `--max-chars <n>` | excerpt length in the digest (default 300) |
+| | `--output-file <path>` | corpus JSONL path (collect), digest or select JSON (digest) |
+| | `--corpus`, `--stdout`, `--select`, `--path`, `--bot`, `--rebuttals` | digest options; see "Digest and `--select`" |
+| `prepare.dart` | `--repo <owner/name\|alias>` / `--id <id>` | `init`: target repo and eval id |
+| | `--eval <evalDir>` | `check` / `evaluate`: the eval directory |
+| | `--runs <n>` | `check` only: runs per arm on the primary model (default 1) |
+| | `--out <dir>` | run directory (default `<evalDir>/check` or `<evalDir>/evaluate`) |
+| | `--seed <n>` | arm assignment (check/evaluate) or finding shuffle (judge) |
+| | `--run <runDir>` | `judge`: the evaluate run directory |
+| `score.dart` | `--run <runDir>` | the run directory to score (required) |
+| | `--output-file <path>` | write the section's JSON (`all` also writes `<runDir>/score.json`) |
+
 ## Corpus (written by `collect.dart`)
 
 One PR per line: its metadata (`number`, `title`, `url`, `mergedAt`,

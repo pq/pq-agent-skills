@@ -275,5 +275,5 @@ Only after the user approves a specific suggestion:
 - Only reviewer behavior is tested. Guidance aimed at coding agents
   (`affects: local`) is proposed but not proven.
 - Small samples: results are structured judgments, not statistics.
-- See [references/design-notes.md](references/design-notes.md) for what was
-  deliberately left out and why.
+- Known gaps and planned work: [docs/roadmap.md](docs/roadmap.md). What was
+  deliberately left out, and why: [docs/decisions.md](docs/decisions.md).

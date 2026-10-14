@@ -18,6 +18,8 @@ Fetches recent GitHub Actions workflow runs across multiple repositories, filter
 ### 🎛️ Review Tuner (Experimental)
 Mines human pull-request review feedback to propose, and optionally verify, changes to a repository's agent guidance (review style guides, bot config, `AGENTS.md`, skills). Three modes: **propose** (drafts changes from review evidence, no replays), **check** (a quick replay: one review per guidance version on a few PRs, verdict *helps / no effect / hurts*), and **evaluate** (thorough replays with a blind judge, fidelity against the real bot, and a confidence rubric). Works on any GitHub repo; favorite repos and reviewer roles live in one config file (`~/.config/review-tuner/config.json`). It only writes to GitHub to open draft PRs in your own fork, and only after you approve each one.
 
+Design background, decisions, lessons, and roadmap: [skills/review-tuner/docs/README.md](skills/review-tuner/docs/README.md).
+
 ---
 
 ## 📊 Example Run Output
