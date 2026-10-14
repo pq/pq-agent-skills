@@ -17,6 +17,7 @@ reported as "no results".
   corpus/<since>_<until>.stats.json   review-density summary
   corpus/<since>_<until>.digest.md    digest (written by collect and digest)
   corpus/<since>_<until>.digest.json  the same digest as JSON
+  corpus/<since>_<until>.digest-<view>.md|.json  digest views (digest --view)
   proposals/<date>/report.md          propose mode output
   evals/<id>/
     eval.json                         the evaluation definition (below)
@@ -82,6 +83,7 @@ Every script prints its usage with `--help`. Unknown options exit `2`.
 | | `--max-chars <n>` | excerpt length in the digest (default 300) |
 | | `--output-file <path>` | corpus JSONL path (collect), digest or select JSON (digest), guidance JSON (`guidance`) |
 | | `--corpus`, `--stdout`, `--select`, `--path`, `--bot`, `--rebuttals` | digest options; see "Digest and `--select`" |
+| | `--view`, `--no-acks`, `--max-bytes`, `--skip` | digest views and paging; see [Digest views and paging](#digest-views-and-paging) |
 | `prepare.dart` | `--repo <owner/name\|alias>` / `--id <id>` | `init`: target repo and eval id |
 | | `--eval <evalDir>` | `check` / `evaluate`: the eval directory |
 | | `--runs <n>` | `check` only: runs per arm on the primary model (default 1) |
@@ -189,7 +191,8 @@ over those comments, **excluding the PR author's own**, which are listed
 (marked "PR author") but only tallied as `prAuthorComments`. The digest JSON
 also has `maxChars`, `humanCommentsByRole` (also excluding PR authors),
 `botThreads`, `botThreadsResolved`, `botThreadsWithHumanReply`, `topPaths`,
-and `prs`.
+and `prs`. For big corpora, read the
+[views](#digest-views-and-paging) instead.
 
 `collect.dart digest --corpus <file> --select <regex> [--path <regex>]
 [--bot [--rebuttals <ids|@file>]] [--output-file <x.json>]` counts comments in
@@ -284,6 +287,62 @@ threads; the markdown shows its first 10 characters as `@<sha>`) is the
 commit an inline comment was made on: use it as a case's `commit`. A bot
 comment has a human reply when a non-bot comment follows it in the same
 review thread.
+
+### Digest views and paging
+
+`collect.dart digest --corpus <file> --view <full|bot-replies|human-inline>
+[--no-acks] [--max-bytes <n> [--skip <k>]]` writes one view of the corpus
+(non-automation PRs only), as JSON plus markdown, to
+`<corpus base>.digest-<view>.json` / `.md` (`full`, the default, keeps the
+`.digest.*` names and is the digest above, byte for byte). `--output-file`,
+`--stdout`, and `--max-chars` work as for the digest; without `--stdout` it
+prints a one-paragraph summary, the page line (when paging), and the paths.
+None of these options combine with `--select`.
+
+**`bot-replies`**: the configured bot's inline threads with at least one
+human reply, by PR. Each thread has the bot comment's `id`, `path`, `line`,
+`commitId`, `severity` (its badge, removed from `text`), `resolved`,
+`outdated`, `text` (`--max-chars`), `url`, and `replies`: every human reply
+with `id`, `author`, `role`, `weight`, `isPrAuthor`, `text` (3 × `--max-chars`),
+`url`, and `ack: true` on bare acknowledgments. The markdown shows a thread as
+`- [b:<id>] path:line @sha [severity, resolved]: text` and each reply as
+`↳ [r:<id>] who [ack]: text`; the `r:` ids are the ones `--rebuttals` takes.
+Totals: `botThreads`, `botThreadsWithHumanReply`, `threadsShown`,
+`repliesShown`, `prsShown`.
+
+`--no-acks` (only with `bot-replies`) drops threads whose human replies are
+**all** bare acknowledgments, and adds `ackThreadsDropped` (count, also in the
+summary) and `droppedThreads` (`pr`, thread `id`, reply ids) so the cut can be
+audited. A reply is a bare acknowledgment when it is trivial (as for
+substantive comments: "LGTM", "Thanks!", "Done."), or when, after removing
+quoted lines (unless the whole reply is quoted, as in a `> [!NOTE]` callout),
+links, `@mentions`, `#123` refs, and commit SHAs, it is empty (emoji or
+punctuation only) or at most 12 words, all from a short list of
+acknowledgments ("done", "fixed", "addressed", "applied", "thanks", "good
+catch", "will do", "agreed", "yes", "ok", "+1", ...) and padding ("the",
+"this", "in", "for", "commit", "suggestion", ...), with at least one
+acknowledgment. Any other word keeps the reply, so "Done. Not needed here"
+and "No." survive. It never decides what is a rebuttal (you do, with
+`--rebuttals`): a surviving reply may still be an acceptance.
+
+**`human-inline`**: substantive inline and review-body comments by humans
+other than the PR author, by PR. Replies in the bot's threads (shown by
+`bot-replies`) and conversation comments are left out. Each comment has `id`,
+`kind`, `author`, `role`, `weight`, `path`, `line`, `commitId`, `reviewState`
+(review bodies), `text` (`--max-chars`), and `url`. Totals: `comments`,
+`weighted`, `inline`, `reviewBodies`, `byRole`, `paths`, `prsShown`. The
+markdown lists the page's PRs, then groups the comments by path (most
+comments first), then PR: `- #<pr> L<line> [c:<id>] who: text`, with review
+bodies last.
+
+**Paging.** `--max-bytes <n>` (any view) caps the markdown at `n` UTF-8
+bytes: it stops at a PR boundary (always at least one PR) and ends with
+`Showing PRs 1–k of N (budget n bytes). Next page: --skip k`, or
+`Last page.`. `--skip <k>` starts after the first `k` PRs of the view (a
+`--skip` past the last PR exits 2). A page holds whole PRs, so the pages of a
+view cover each PR exactly once; `human-inline` groups by path within each
+page. Every run rewrites the same `.md` (the current page); the JSON always
+holds the whole view and is never truncated.
 
 ## `eval.json`
 

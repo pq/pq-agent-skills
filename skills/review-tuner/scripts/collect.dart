@@ -10,8 +10,9 @@
 ///         [--output-file <corpus.jsonl>] [--concurrency 4] [--max-chars 300]
 ///         [--config <path>]
 ///     dart collect.dart digest --corpus <corpus.jsonl> [--repo <owner/name>]
-///         [--output-file <digest.json>] [--stdout] [--max-chars 300]
-///         [--config <path>]
+///         [--view full|bot-replies|human-inline] [--no-acks]
+///         [--max-bytes <n> [--skip <k>]] [--output-file <digest.json>]
+///         [--stdout] [--max-chars 300] [--config <path>]
 ///     dart collect.dart digest --corpus <corpus.jsonl> --select <regex>
 ///         [--path <regex>] [--bot [--rebuttals <ids|@file>]]
 ///         [--output-file <select.json>] [--repo <owner/name>] [--config <path>]
@@ -28,6 +29,7 @@ import 'src/cli.dart';
 import 'src/config.dart';
 import 'src/corpus.dart';
 import 'src/guidance.dart';
+import 'src/views.dart';
 
 const usage = '''
 Usage:
@@ -36,8 +38,9 @@ Usage:
       [--output-file <corpus.jsonl>] [--concurrency 4] [--max-chars 300]
       [--config <path>]
   dart collect.dart digest --corpus <corpus.jsonl> [--repo <owner/name>]
-      [--output-file <digest.json>] [--stdout] [--max-chars 300]
-      [--config <path>]
+      [--view full|bot-replies|human-inline] [--no-acks]
+      [--max-bytes <n> [--skip <k>]] [--output-file <digest.json>]
+      [--stdout] [--max-chars 300] [--config <path>]
   dart collect.dart digest --corpus <corpus.jsonl> --select <regex>
       [--path <regex>] [--bot [--rebuttals <ids|@file>]]
       [--output-file <select.json>] [--repo <owner/name>] [--config <path>]
@@ -63,15 +66,8 @@ const _replyExcerptLength = 300;
 /// weight (`references/rubric.md`).
 const _authorRebuttalFactor = 0.5;
 
-/// Human replies in bot threads keep this many times `--max-chars`, since
-/// they carry the verdict on the bot's comment.
-const _replyCharsFactor = 3;
-
 /// Most-commented paths listed in a digest.
 const _topPathCount = 15;
-
-/// Characters of a commit SHA shown in markdown.
-const _shaPrefixLength = 10;
 
 /// Defaults for `--days` and `--concurrency`.
 const _defaultDays = 90;
@@ -123,9 +119,13 @@ Future<void> main(List<String> argv) => guarded(usage, argv, () async {
             'select',
             'path',
             'rebuttals',
+            'view',
+            'max-bytes',
+            'skip',
           }, flags: {
             'stdout',
             'bot',
+            'no-acks',
           });
           if (args.positional.isNotEmpty) usageError('Unexpected arguments.');
           runDigest(args.options);
@@ -851,27 +851,19 @@ void _list(StringBuffer b, String title, List<String> items) {
 // Digest
 // ---------------------------------------------------------------------------
 
-/// Collapses whitespace, turns badge images (`![high](...)`) into `[high]`,
-/// and truncates to [max] characters.
-String excerpt(String body, int max) {
-  var text = _flatten(body);
-  return text.length <= max ? text : '${text.substring(0, max)}…';
-}
-
-/// [body] with badge images as `[high]` and whitespace collapsed.
-String _flatten(String body) => body
-    .replaceAllMapped(RegExp(r'!\[([^\]]*)\]\([^)]*\)'), (m) => '[${m[1]}]')
-    .replaceAll(RegExp(r'\s+'), ' ')
-    .trim();
-
 /// [path] without a trailing `.jsonl` or `.json`.
 String _base(String path) => path.replaceFirst(RegExp(r'\.jsonl?$'), '');
 
-/// Where `collect` and a plain `digest` write the digest for [corpusPath].
-({String md, String json}) _defaultDigestPaths(String corpusPath) => (
-      md: '${_base(corpusPath)}.digest.md',
-      json: '${_base(corpusPath)}.digest.json',
-    );
+/// Where `collect` and `digest` write the digest (or another [view]) for
+/// [corpusPath].
+({String md, String json}) _defaultDigestPaths(String corpusPath,
+    [DigestView view = DigestView.full]) {
+  var suffix = view == DigestView.full ? '' : '-${view.option}';
+  return (
+    md: '${_base(corpusPath)}.digest$suffix.md',
+    json: '${_base(corpusPath)}.digest$suffix.json',
+  );
+}
 
 int _maxChars(Map<String, String> options) {
   var n = int.tryParse(options['max-chars'] ?? '$_defaultMaxChars');
@@ -925,7 +917,7 @@ Map<String, Object?> _digestComment(Comment c, int max) => {
     };
 
 /// Digest of one PR, or null if it has nothing worth showing. Human replies
-/// in bot threads keep [_replyCharsFactor] x [maxChars].
+/// in bot threads keep [replyCharsFactor] x [maxChars].
 Map<String, Object?>? digestPr(PullRequest pr, String bot, int maxChars) {
   var roots = pr.botThreadRoots(bot).toList();
   var rootIds = {for (var r in roots) r.id};
@@ -945,7 +937,7 @@ Map<String, Object?>? digestPr(PullRequest pr, String bot, int maxChars) {
         'text': excerpt(root.body, maxChars),
         'replies': [
           for (var r in pr.humanReplies(root))
-            _digestComment(r, maxChars * _replyCharsFactor),
+            _digestComment(r, maxChars * replyCharsFactor),
         ],
       },
   ];
@@ -1061,7 +1053,19 @@ void runDigest(Map<String, String> options) {
     for (var flag in ['path', 'bot', 'rebuttals']) {
       if (options.containsKey(flag)) usageError('--$flag requires --select.');
     }
+  } else {
+    for (var flag in ['view', 'no-acks', 'max-bytes', 'skip', 'stdout']) {
+      if (options.containsKey(flag)) {
+        usageError('--$flag can\'t be used with --select.');
+      }
+    }
   }
+  var view = DigestView.parse(options['view'] ?? DigestView.full.option);
+  if (options.containsKey('no-acks') && view != DigestView.botReplies) {
+    usageError('--no-acks requires --view bot-replies.');
+  }
+  var maxBytes = _intOption(options, 'max-bytes', min: 1);
+  var skip = _intOption(options, 'skip', min: 0) ?? 0;
   if (options.containsKey('rebuttals') && !options.containsKey('bot')) {
     usageError('--rebuttals requires --bot.');
   }
@@ -1096,28 +1100,71 @@ void runDigest(Map<String, String> options) {
     stdout.write(renderSelect(result));
     return;
   }
-  _redigest(corpus, repo, corpusPath, maxChars, options);
+  var digest = switch (view) {
+    DigestView.full => buildDigest(corpus, repo, corpusPath, maxChars),
+    DigestView.botReplies => buildBotReplies(corpus, repo, corpusPath, maxChars,
+        noAcks: options.containsKey('no-acks')),
+    DigestView.humanInline =>
+      buildHumanInline(corpus, repo, corpusPath, maxChars),
+  };
+  _redigest(digest, view, corpusPath, options, maxBytes: maxBytes, skip: skip);
 }
 
-/// `digest` without `--select`: rewrites the digest files for [corpus].
-void _redigest(List<PullRequest> corpus, RepoConfig repo, String corpusPath,
-    int maxChars, Map<String, String> options) {
-  var digest = buildDigest(corpus, repo, corpusPath, maxChars);
+/// A non-negative integer option of at least [min], or null if absent.
+int? _intOption(Map<String, String> options, String name, {required int min}) {
+  if (options[name] case var value?) {
+    var n = int.tryParse(value);
+    if (n == null || n < min) {
+      usageError('--$name must be an integer of at least $min.');
+    }
+    return n;
+  }
+  return null;
+}
+
+/// `digest` without `--select`: writes [digest] (a [view]) as JSON, and one
+/// page of its markdown, next to the corpus or to `--output-file`.
+void _redigest(Map<String, Object?> digest, DigestView view, String corpusPath,
+    Map<String, String> options,
+    {required int? maxBytes, required int skip}) {
+  var (header, render) = switch (view) {
+    DigestView.full => (
+        _digestHeader(digest),
+        (List<Map> prs) => renderDigest({...digest, 'prs': prs}),
+      ),
+    DigestView.botReplies => (
+        botRepliesHeader(digest),
+        (List<Map> prs) => renderBotReplies(digest, prs),
+      ),
+    DigestView.humanInline => (
+        humanInlineHeader(digest),
+        (List<Map> prs) => renderHumanInline(digest, prs),
+      ),
+  };
+  var page = paginate((digest['prs'] as List).cast<Map>(), render,
+      maxBytes: maxBytes, skip: skip);
   var paths = switch (options['output-file']) {
     var path? => (md: '${_base(path)}.md', json: path),
-    null => _defaultDigestPaths(corpusPath),
+    null => _defaultDigestPaths(corpusPath, view),
   };
-  writeDigest(digest, paths.json, paths.md);
+  writeJson(paths.json, digest);
+  writeText(paths.md, page.markdown);
   if (options.containsKey('stdout')) {
-    stdout.write(renderDigest(digest));
-  } else {
-    stdout
-      ..writeln(_digestHeader(digest))
-      ..writeln()
-      ..writeln('Wrote:')
-      ..writeln('- ${paths.md}')
-      ..writeln('- ${paths.json}');
+    stdout.write(page.markdown);
+    return;
   }
+  stdout
+    ..writeln(header)
+    ..writeln();
+  if (maxBytes != null || skip > 0) {
+    stdout
+      ..writeln(pageStatus(page.from, page.to, page.total, maxBytes))
+      ..writeln();
+  }
+  stdout
+    ..writeln('Wrote:')
+    ..writeln('- ${paths.md}')
+    ..writeln('- ${paths.json}');
 }
 
 // ---------------------------------------------------------------------------
@@ -1292,10 +1339,10 @@ Map<String, Object?> _selectReply(
     };
 
 /// The first span of [body] that [text] matches, with [_matchContext]
-/// characters on each side (`…` marks a cut). Matched in the [_flatten]ed
+/// characters on each side (`…` marks a cut). Matched in the [flatten]ed
 /// body when possible, so badges and line breaks read cleanly.
 String _span(String body, RegExp text) {
-  var flat = _flatten(body);
+  var flat = flatten(body);
   if (text.firstMatch(flat) == null) flat = body;
   var match = text.firstMatch(flat)!;
   var start = (match.start - _matchContext).clamp(0, flat.length);
@@ -1403,28 +1450,12 @@ String _selectLine(Map m) {
           '${m['humanReply'] == true ? ', human reply' : ''}'
           '${m['authorReply'] == true ? ' (incl. PR author)' : ''}]';
   var url = m['url'] == null ? '' : ' ${m['url']}';
-  return '- #${m['pr']} $author ${_where(m)}$state: ${m['text']}$url';
+  return '- #${m['pr']} $author ${whereLabel(m)}$state: ${m['text']}$url';
 }
 
 // ---------------------------------------------------------------------------
 // Digest markdown
 // ---------------------------------------------------------------------------
-
-String _who(Map c) {
-  var author =
-      c['isPrAuthor'] == true ? '${c['author']} (PR author)' : c['author'];
-  return '$author [${c['role']} ${c['weight']}]';
-}
-
-/// Location of [c]: `path:line` (plus `@<commit>` when known), or its kind.
-String _where(Map c) {
-  if (c['path'] == null) return c['kind'] as String;
-  var line = c['line'] == null ? '' : ':${c['line']}';
-  var commit = c['commitId'] is String
-      ? ' @${(c['commitId'] as String).substring(0, _shaPrefixLength)}'
-      : '';
-  return '`${c['path']}$line`$commit';
-}
 
 /// The digest's one-paragraph summary.
 String _digestHeader(Map<String, Object?> d) =>
@@ -1444,7 +1475,7 @@ String renderDigest(Map<String, Object?> d) {
     ..writeln()
     ..writeln('${_digestHeader(d)} Trivial human comments (LGTM, thanks) '
         'omitted; text truncated to ${d['maxChars']} chars '
-        '(${(d['maxChars'] as int) * _replyCharsFactor} for replies in bot '
+        '(${(d['maxChars'] as int) * replyCharsFactor} for replies in bot '
         'threads).');
   _table(b, 'Human comments by role (excluding PR authors)', [
     'Role',
@@ -1484,17 +1515,17 @@ void _renderDigestPr(StringBuffer b, Map pr) {
     ..writeln('### #${pr['number']} ${pr['title']} '
         '(${pr['author']}, ${pr['authorRole']}, ${pr['outcome']})');
   for (var c in (pr['human'] as List).cast<Map>()) {
-    b.writeln('- H ${_who(c)} ${_where(c)}: ${c['text']}');
+    b.writeln('- H ${whoLabel(c)} ${whereLabel(c)}: ${c['text']}');
   }
   for (var t in (pr['bot'] as List).cast<Map>()) {
     var state = [
       t['resolved'] == true ? 'resolved' : 'unresolved',
       if (t['outdated'] == true) 'outdated',
     ].join(', ');
-    b.writeln('- B ${_where({...t, 'kind': 'inline'})} [$state]: '
+    b.writeln('- B ${whereLabel({...t, 'kind': 'inline'})} [$state]: '
         '${t['text']}');
     for (var r in (t['replies'] as List).cast<Map>()) {
-      b.writeln('  - ↳ ${_who(r)}: ${r['text']}');
+      b.writeln('  - ↳ ${whoLabel(r)}: ${r['text']}');
     }
   }
 }

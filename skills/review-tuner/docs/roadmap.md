@@ -49,7 +49,6 @@ calibration loop (below) would answer this from outcomes.
 
 | Item | Why | Evidence |
 |---|---|---|
-| Digest views (`bot-replies`, `human-inline`, threads with pushback) and a size budget | Digests of 130–577 KB take several reads | all three exploration repos |
 | A ready-to-run dispatch list from `prepare.dart` (`message`, `tier` pairs) | Scripted orchestrators couldn't parse `tasks.json` from a file read | exploration check runs |
 
 ## Future work
