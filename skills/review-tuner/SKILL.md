@@ -40,7 +40,7 @@ rerun outside the sandbox rather than waiting.
 
 | Script | Subcommands |
 |---|---|
-| `collect.dart` | (default) collect a PR corpus and its digest; `digest` re-digest a corpus or count a theme (`--select`); `guidance` list a repo's agent files and broken links from a shallow clone |
+| `collect.dart` | (default) collect a PR corpus and its digest; `digest` re-digest a corpus, write a focused view of it (`--view`), or count a theme (`--select`); `guidance` list a repo's agent files and broken links from a shallow clone |
 | `prepare.dart` | `init` an eval; `check` / `evaluate` write reviewer tasks; `judge` writes judge tasks |
 | `score.dart` | `validate`, `replay`, `noise`, `fidelity`, `rubric`, `all` |
 
@@ -92,6 +92,20 @@ File formats and the data layout: [references/formats.md](references/formats.md)
 2. **Digest:** read `corpus/<since>_<until>.digest.md`. It's your main input;
    don't read the raw corpus. (`collect.dart digest --corpus <file>` regenerates
    it; `--max-chars N` gives longer excerpts.)
+   **Big corpora** (digest over ~150 KB, or more than ~200 PRs): don't page
+   through the full digest. Read two focused views instead
+   ([views](references/formats.md#digest-views-and-paging)), each written next
+   to the corpus:
+   - `collect.dart digest --corpus <file> --view bot-replies --no-acks`: the
+     bot's threads that humans replied to, minus threads where every reply is
+     a bare "Done" or "Thanks". Input for "the bot is wrong" themes.
+   - `collect.dart digest --corpus <file> --view human-inline`: substantive
+     inline and review-body comments by reviewers (not PR authors), grouped
+     by path. Input for "humans keep asking for X" themes.
+
+   Add `--max-bytes 150000` to either; if the file ends with "Next page:
+   --skip k", rerun with `--skip k` until it says "Last page." Views only
+   help you find themes: still count every theme with `--select` (step 5).
 3. **Audit the guidance itself** (cheap, deterministic):
    - **Find the agent files:** `collect.dart guidance --repo <repo>`. It makes
      or updates a shallow clone of the default branch at
@@ -117,10 +131,13 @@ File formats and the data layout: [references/formats.md](references/formats.md)
      text of its guidance files and doesn't follow links, so rules that live
      only in linked files (`AGENTS.md`, `STYLE.md`, skills) are invisible to
      it: flag important rules that the bot's files only link to.
-4. **Find themes in the digest:**
+4. **Find themes in the digest** (or the views):
    - the same correction made by humans on 2+ PRs (a missing rule);
    - bot comments that humans dismissed, argued with, or resolved without
-     change (a wrong or over-broad rule); a PR author's rebuttal counts too;
+     change (a wrong or over-broad rule); a PR author's rebuttal counts too.
+     The `bot-replies` view is the starting list: its `[r:<id>]` reply ids
+     go straight into `--rebuttals` (step 5). `--no-acks` drops only bare
+     acknowledgments; deciding what's a rebuttal is still your job;
    - issues humans caught that the bot missed (a missing rule the bot reads).
    Themes about PR descriptions or process (testing notes, screenshots,
    changelog wording) can't be replayed. Check whether the PR template or

@@ -61,6 +61,15 @@ only ~10–30% of hand-counted rebuttals: maintainers rebut by stating facts,
 not with pushback words.
 → The agent classifies, the script counts (D42); counter-evidence caps (D44).
 
+**Acknowledgments are most bot replies in small repos, few in big ones.**
+A narrow acknowledgment filter dropped 29 of 79 replied-to bot threads in
+one repo and 17 of 44 in another, but only 15 of 177 in `flutter/flutter`,
+where replies explain themselves. Its first version also dropped replies
+written as `> [!NOTE]` callouts, since it stripped quoted lines.
+→ `--no-acks` (D58) shrinks small repos' views by about a third; for big
+repos the win comes from the views themselves and paging (D57). Quoted lines
+are kept when the whole reply is quoted.
+
 **A check verdict can hinge on one regex match.**
 A gating check looked "mixed" because the baseline's only hit matched a
 feature-flag name, not the concern. After tightening the regex: 6/18 → 15/18.

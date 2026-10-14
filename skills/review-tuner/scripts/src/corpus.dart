@@ -49,6 +49,77 @@ String? botSeverity(String body) => _severityBadges.entries
     .firstOrNull
     ?.value;
 
+/// Words that acknowledge a comment ("Done", "Good catch", "Will do").
+final _ackWords = {
+  ...('done fixed fix addressed applied updated changed resolved removed '
+          'added implemented ack acked acknowledged thanks thank thx ty tysm '
+          'catch sgtm lgtm agreed agree yes yep yeah yup sure ok okay plusone '
+          'nice great cool good sense point fair true correct right indeed '
+          'absolutely definitely do')
+      .split(' '),
+};
+
+/// Words that may pad an acknowledgment ("Done, thanks for the review").
+final _ackFiller = {
+  ...('the this that it its now here in with and a an you so much very '
+          'lot lots for all suggestion suggestions review feedback comment '
+          'comments latest commit as suggested i ive im ill to of makes '
+          'sounds idea call again too also will is has have been')
+      .split(' '),
+};
+
+/// Longer replies are never bare acknowledgments.
+const _maxAckWords = 12;
+
+/// Whether a reply is a bare acknowledgment: trivial (as in [isSubstantive]),
+/// empty once quotes, links, mentions, `#123` refs, and commit SHAs are gone
+/// (emoji or punctuation only), or at most [_maxAckWords] words that are all
+/// acknowledgments or padding, with at least one acknowledgment ("Done",
+/// "Good catch, thanks!", "Fixed in abc1234."). Deliberately narrow: any other
+/// word ("not", "but", "intentional") keeps the reply.
+bool isAcknowledgment(String body) {
+  if (_trivialComment.hasMatch(body)) return true;
+  var words = _ackTokens(body);
+  return words.length <= _maxAckWords &&
+      words.every((w) => _ackWords.contains(w) || _ackFiller.contains(w)) &&
+      (words.isEmpty || words.any(_ackWords.contains));
+}
+
+/// The lowercase words of [body] that [isAcknowledgment] looks at, without
+/// quoted lines unless the whole reply is quoted (a `> [!NOTE]` callout).
+List<String> _ackTokens(String body) {
+  var lines = [
+    for (var line in body.split('\n'))
+      if (line.trim().isNotEmpty) line,
+  ];
+  bool quoted(String line) => line.trimLeft().startsWith('>');
+  var text = (lines.every(quoted) ? lines : lines.where((l) => !quoted(l)))
+      .join(' ')
+      .toLowerCase()
+      .replaceAll(RegExp(r'https?://\S+'), ' ')
+      .replaceAll(RegExp(r'@[\w\-\[\]/]+'), ' ')
+      .replaceAll(RegExp(r'#\d+'), ' ')
+      .replaceAll(RegExp(r'\b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b'), ' ')
+      .replaceAll('+1', ' plusone ')
+      .replaceAll(RegExp("['’]"), '')
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim();
+  return text.isEmpty ? const [] : text.split(' ');
+}
+
+/// Collapses whitespace, turns badge images (`![high](...)`) into `[high]`,
+/// and truncates to [max] characters.
+String excerpt(String body, int max) {
+  var text = flatten(body);
+  return text.length <= max ? text : '${text.substring(0, max)}…';
+}
+
+/// [body] with badge images as `[high]` and whitespace collapsed.
+String flatten(String body) => body
+    .replaceAllMapped(RegExp(r'!\[([^\]]*)\]\([^)]*\)'), (m) => '[${m[1]}]')
+    .replaceAll(RegExp(r'\s+'), ' ')
+    .trim();
+
 /// A single human or bot comment on a pull request.
 final class Comment {
   const Comment({

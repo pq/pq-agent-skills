@@ -271,6 +271,16 @@ An AI agent opening PRs for a person gets human review, so `agentAuthors` (per r
 
 Status: accepted
 
+### D57: Big corpora are read through digest views, paged at PR boundaries
+`collect.dart digest --view bot-replies` (the bot's threads with human replies) and `--view human-inline` (substantive inline and review-body comments by non-author reviewers, grouped by path) replace the full digest as step-2 input when it passes ~150 KB or ~200 PRs; `--view full` stays the default, byte for byte. `--max-bytes`/`--skip` page any view's markdown at PR boundaries with a "Next page" footer; JSON is never truncated. On `flutter/flutter` (14 days) the 577 KB digest became 123 KB (`bot-replies --no-acks`) and 179 KB (`human-inline`, two pages at 150 KB). Themes are still counted with `--select` ([lessons.md](lessons.md)).
+
+Status: accepted
+
+### D58: `--no-acks` drops only threads whose replies are all bare acknowledgments
+A reply is an acknowledgment only if every word left (after quotes, links, mentions, refs, and SHAs) is on a short acknowledgment or padding list, at most 12 words, or nothing is left (emoji only). Any other word keeps it, so precision beats recall; classifying rebuttals stays with the agent (D42). The starting list of pushed-back threads is the `bot-replies` view itself, not a regex.
+
+Status: accepted
+
 ## Complexity backed out
 
 What the pilot had and the skill deliberately dropped. Bring something back
